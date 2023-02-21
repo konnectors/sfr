@@ -1,5 +1,8 @@
-import ContentScript from '../../connectorLibs/ContentScript'
-import {kyScraper as ky, blobToBase64} from '../../connectorLibs/utils'
+/* eslint-disable spaced-comment */
+/* eslint-disable prettier/prettier */
+import {ContentScript} from 'cozy-clisk/dist/contentscript'
+import {blobToBase64} from 'cozy-clisk/dist/contentscript/utils'
+import ky from 'ky'
 import Minilog from '@cozy/minilog'
 const log = Minilog('ContentScript')
 Minilog.enable('sfrCCC')

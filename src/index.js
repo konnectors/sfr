@@ -15,7 +15,7 @@ const LOGOUT_URL = 'https://www.sfr.fr/cas/logout?url=https://www.sfr.fr/'
 const INFOS_CONSO_URL = 'https://www.sfr.fr/routage/info-conso'
 const BILLS_URL_PATH =
   '/facture-mobile/consultation#sfrintid=EC_telecom_mob-abo_mob-factpaiement'
-
+const DEFAULT_SOURCE_ACCOUNT_IDENTIFIER = 'sfr'
 class TemplateContentScript extends ContentScript {
   // ////////
   // PILOT //
@@ -427,7 +427,7 @@ connector
     ]
   })
   .catch(err => {
-    console.warn(err)
+    log.warn(err)
   })
 
 function sleep(delay) {

@@ -1,54 +1,53 @@
-/* eslint-disable spaced-comment */
-/* eslint-disable prettier/prettier */
-import {ContentScript} from 'cozy-clisk/dist/contentscript'
-import {blobToBase64} from 'cozy-clisk/dist/contentscript/utils'
+import { ContentScript } from 'cozy-clisk/dist/contentscript'
+import { blobToBase64 } from 'cozy-clisk/dist/contentscript/utils'
 import ky from 'ky'
 import Minilog from '@cozy/minilog'
 const log = Minilog('ContentScript')
 Minilog.enable('sfrCCC')
 
-const BASE_CLIENT_URL = "https://espace-client.sfr.fr"
+const BASE_CLIENT_URL = 'https://espace-client.sfr.fr'
 const CLIENT_SPACE_URL = 'https://www.sfr.fr/mon-espace-client'
-const HOMEPAGE_URL = 'https://www.sfr.fr/mon-espace-client/#sfrclicid=EC_mire_Me-Connecter'
-const PERSONAL_INFOS_URL = 'https://espace-client.sfr.fr/infospersonnelles/contrat/informations/'
+const HOMEPAGE_URL =
+  'https://www.sfr.fr/mon-espace-client/#sfrclicid=EC_mire_Me-Connecter'
+const PERSONAL_INFOS_URL =
+  'https://espace-client.sfr.fr/infospersonnelles/contrat/informations/'
 const LOGOUT_URL = 'https://www.sfr.fr/cas/logout?url=https://www.sfr.fr/'
 const INFOS_CONSO_URL = 'https://www.sfr.fr/routage/info-conso'
-const BILLS_URL_PATH = '/facture-mobile/consultation#sfrintid=EC_telecom_mob-abo_mob-factpaiement'
-
+const BILLS_URL_PATH =
+  '/facture-mobile/consultation#sfrintid=EC_telecom_mob-abo_mob-factpaiement'
 
 class TemplateContentScript extends ContentScript {
-  //////////
-  //PILOT //
-  //////////
+  // ////////
+  // PILOT //
+  // ////////
   async ensureAuthenticated() {
     const credentials = await this.getCredentials()
     if (credentials) {
       const auth = await this.authWithCredentials()
-      if(auth) {
+      if (auth) {
         return true
       }
       return false
     }
-    if(!credentials){
+    if (!credentials) {
       const auth = await this.authWithoutCredentials()
-      if(auth) {
+      if (auth) {
         return true
       }
       return false
     }
   }
-  
+
   async waitForUserAuthentication() {
     this.log('waitForUserAuthentication starts')
-    await this.setWorkerState({visible: true})
-    await this.runInWorkerUntilTrue({method: 'waitForAuthenticated'})
-    await this.setWorkerState({visible: false})
+    await this.setWorkerState({ visible: true })
+    await this.runInWorkerUntilTrue({ method: 'waitForAuthenticated' })
+    await this.setWorkerState({ visible: false })
   }
-  
-  
+
   async getUserDataFromWebsite() {
     await this.waitForElementInWorker(`a[href="${PERSONAL_INFOS_URL}"]`)
-    await this.clickAndWait(`a[href="${PERSONAL_INFOS_URL}"]`,'#emailContact' )
+    await this.clickAndWait(`a[href="${PERSONAL_INFOS_URL}"]`, '#emailContact')
     const sourceAccountId = await this.runInWorker('getUserMail')
     await this.runInWorker('getUserIdentity')
     // await this.waitForElementInWorker('[pause]')
@@ -60,27 +59,33 @@ class TemplateContentScript extends ContentScript {
       sourceAccountIdentifier: sourceAccountId
     }
   }
-  
+
   async fetch(context) {
     this.log('Fetch starts')
-    await this.clickAndWait(`a[href="${INFOS_CONSO_URL}"]`,`a[href="${BILLS_URL_PATH}"]` )
-    await this.clickAndWait(`a[href="${BILLS_URL_PATH}"]`,'button[onclick="plusFacture(); return false;"]' )
+    await this.clickAndWait(
+      `a[href="${INFOS_CONSO_URL}"]`,
+      `a[href="${BILLS_URL_PATH}"]`
+    )
+    await this.clickAndWait(
+      `a[href="${BILLS_URL_PATH}"]`,
+      'button[onclick="plusFacture(); return false;"]'
+    )
     await this.runInWorker('getMoreBills')
     await this.runInWorker('getBills')
     await this.saveIdentity(this.store.userIdentity)
-    await this.saveBills(this.store.allBills,{
+    await this.saveBills(this.store.allBills, {
       context,
-      fileIdAttributes:['filename'],
+      fileIdAttributes: ['filename'],
       contentType: 'application/pdf',
       qualificationLabel: 'phone_invoice'
     })
   }
 
-  async authWithCredentials(){
+  async authWithCredentials() {
     await this.goto(CLIENT_SPACE_URL)
     await this.waitForElementInWorker(`a[href="${LOGOUT_URL}"]`)
     const reloginPage = await this.runInWorker('getReloginPage')
-    if(reloginPage){
+    if (reloginPage) {
       this.log('Login expired, new authentication is needed')
       await this.waitForUserAuthentication()
       await this.saveCredentials(this.store.userCredentials)
@@ -89,49 +94,55 @@ class TemplateContentScript extends ContentScript {
     return true
   }
 
-  async authWithoutCredentials(){
+  async authWithoutCredentials() {
     await this.goto(CLIENT_SPACE_URL)
     await this.waitForElementInWorker('#username')
     await this.waitForUserAuthentication()
     await this.saveCredentials(this.store.userCredentials)
     return true
   }
-  
-  
-  //////////
-  //WORKER//
-  //////////
-  
+
+  // ////////
+  // WORKER//
+  // ////////
 
   async checkAuthenticated() {
     const loginField = document.querySelector('#username')
     const passwordField = document.querySelector('#password')
     if (loginField && passwordField) {
-      const userCredentials = await this.findAndSendCredentials.bind(this)(loginField, passwordField)
+      const userCredentials = await this.findAndSendCredentials.bind(this)(
+        loginField,
+        passwordField
+      )
       this.log('Sendin userCredentials to Pilot')
       this.sendToPilot({
         userCredentials
       })
     }
-    if(document.location.href === HOMEPAGE_URL && document.querySelector('a[href="https://www.sfr.fr/cas/logout?url=https://www.sfr.fr/"]')){
+    if (
+      document.location.href === HOMEPAGE_URL &&
+      document.querySelector(
+        'a[href="https://www.sfr.fr/cas/logout?url=https://www.sfr.fr/"]'
+      )
+    ) {
       this.log('Auth Check succeeded')
       return true
     }
     return false
   }
 
-  async findAndSendCredentials(login, password){
+  async findAndSendCredentials(login, password) {
     this.log('findAndSendCredentials starts')
     let userLogin = login.value
     let userPassword = password.value
     const userCredentials = {
-      login : userLogin,
-      password : userPassword
+      login: userLogin,
+      password: userPassword
     }
     return userCredentials
   }
-  
-  async getUserMail() {  
+
+  async getUserMail() {
     const userMailElement = document.querySelector('#emailContact').innerHTML
     if (userMailElement) {
       return userMailElement
@@ -140,32 +151,46 @@ class TemplateContentScript extends ContentScript {
   }
 
   async getUserIdentity() {
-    const givenName = document.querySelector('#nomTitulaire').innerHTML.split(' ')[0]
-    const familyName = document.querySelector('#nomTitulaire').innerHTML.split(' ')[1]
-    const address = document.querySelector('#adresseContact').innerHTML.replace(/\t/g,' ').replace(/\n/g, '')
-    const unspacedAddress = address.replace(/(\s{2,})/g, ' ').replace(/^ +/g, '').replace(/ +$/g, '')
+    const givenName = document
+      .querySelector('#nomTitulaire')
+      .innerHTML.split(' ')[0]
+    const familyName = document
+      .querySelector('#nomTitulaire')
+      .innerHTML.split(' ')[1]
+    const address = document
+      .querySelector('#adresseContact')
+      .innerHTML.replace(/\t/g, ' ')
+      .replace(/\n/g, '')
+    const unspacedAddress = address
+      .replace(/(\s{2,})/g, ' ')
+      .replace(/^ +/g, '')
+      .replace(/ +$/g, '')
     const addressNumbers = unspacedAddress.match(/([0-9]{1,})/g)
     const houseNumber = addressNumbers[0]
     const postCode = addressNumbers[1]
     const addressWords = unspacedAddress.match(/([A-Z ]{1,})/g)
     const street = addressWords[0].replace(/^ +/g, '').replace(/ +$/g, '')
     const city = addressWords[1].replace(/^ +/g, '').replace(/ +$/g, '')
-    const mobilePhoneNumber = document.querySelector('#telephoneContactMobile').innerHTML
+    const mobilePhoneNumber = document.querySelector(
+      '#telephoneContactMobile'
+    ).innerHTML
     let homePhoneNumber = null
-    if(document.querySelector('#telephoneContactFixe')){
-      homePhoneNumber = document.querySelector('#telephoneContactFixe').innerHTML
+    if (document.querySelector('#telephoneContactFixe')) {
+      homePhoneNumber = document.querySelector(
+        '#telephoneContactFixe'
+      ).innerHTML
     }
     const email = document.querySelector('#emailContact').innerHTML
     const userIdentity = {
       email,
-      name : {
+      name: {
         givenName,
         familyName,
-        fullname : `${givenName} ${familyName}`
+        fullname: `${givenName} ${familyName}`
       },
       address: [
         {
-          formattedAddress : unspacedAddress,
+          formattedAddress: unspacedAddress,
           houseNumber,
           postCode,
           city,
@@ -174,27 +199,27 @@ class TemplateContentScript extends ContentScript {
       ],
       phone: [
         {
-          type:'mobile',
-          number : mobilePhoneNumber
+          type: 'mobile',
+          number: mobilePhoneNumber
         }
       ]
     }
-    if(homePhoneNumber !== null){
+    if (homePhoneNumber !== null) {
       userIdentity.phone.push({
-        type:'home',
-        number : homePhoneNumber
+        type: 'home',
+        number: homePhoneNumber
       })
     }
-    await this.sendToPilot({userIdentity})
+    await this.sendToPilot({ userIdentity })
   }
 
   async getMoreBills() {
     const moreBillsSelector = 'button[onclick="plusFacture(); return false;"]'
-    while(document.querySelector(`${moreBillsSelector}`) !== null) {
+    while (document.querySelector(`${moreBillsSelector}`) !== null) {
       this.log('moreBillsButton detected, clicking')
       const moreBillsButton = document.querySelector(`${moreBillsSelector}`)
       moreBillsButton.click()
-      //Here, we need to wait for the older bills to load on the page
+      // Here, we need to wait for the older bills to load on the page
       await sleep(3)
     }
     this.log('No more moreBills button')
@@ -214,28 +239,42 @@ class TemplateContentScript extends ContentScript {
 
   async findLastBill() {
     let lastBill = []
-    const lastBillElement = document.querySelector('div[class="sr-inline sr-xs-block sr-margin-t-35"]')
-    const rawAmount = lastBillElement.querySelectorAll('div')[0].querySelector('span').innerHTML
-    const fullAmount = rawAmount.replace(/&nbsp;/g,'').replace(/ /g,'').replace(/\n/g,'')
+    const lastBillElement = document.querySelector(
+      'div[class="sr-inline sr-xs-block sr-margin-t-35"]'
+    )
+    const rawAmount = lastBillElement
+      .querySelectorAll('div')[0]
+      .querySelector('span').innerHTML
+    const fullAmount = rawAmount
+      .replace(/&nbsp;/g, '')
+      .replace(/ /g, '')
+      .replace(/\n/g, '')
     const amount = parseFloat(fullAmount.replace('€', ''))
     const currency = fullAmount.replace(/[0-9]*/g, '')
-    const rawDate = lastBillElement.querySelectorAll('div')[1].querySelectorAll('span')[1].innerHTML
+    const rawDate = lastBillElement
+      .querySelectorAll('div')[1]
+      .querySelectorAll('span')[1].innerHTML
     const dateArray = rawDate.split('/')
     const day = dateArray[0]
     const month = dateArray[1]
     const year = dateArray[2]
     const date = `${day}-${month}-${year}`
-    const rawPaymentDate = lastBillElement.querySelectorAll('div')[1].querySelectorAll('span')[0].innerHTML
+    const rawPaymentDate = lastBillElement
+      .querySelectorAll('div')[1]
+      .querySelectorAll('span')[0].innerHTML
     const paymentArray = rawPaymentDate.split('/')
     const paymentDay = paymentArray[0]
     const paymentMonth = paymentArray[1]
     const paymentYear = paymentArray[2]
-    const filepath = lastBillElement.querySelectorAll('div')[4].querySelector('a').getAttribute('href')
-    const fileurl =`${BASE_CLIENT_URL}${filepath}`
+    const filepath = lastBillElement
+      .querySelectorAll('div')[4]
+      .querySelector('a')
+      .getAttribute('href')
+    const fileurl = `${BASE_CLIENT_URL}${filepath}`
     const computedLastBill = {
       amount,
-      currency : currency === '€' ? 'EUR' : currency,
-      date : new Date(`${month}/${day}/${year}`),
+      currency: currency === '€' ? 'EUR' : currency,
+      date: new Date(`${month}/${day}/${year}`),
       paymentDate: new Date(`${paymentMonth}/${paymentDay}/${paymentYear}`),
       filename: await getFileName(rawDate, amount, currency),
       vendor: 'sfr',
@@ -250,14 +289,20 @@ class TemplateContentScript extends ContentScript {
         }
       }
     }
-    if(lastBillElement.children[2].querySelectorAll('a')[1] !== undefined) {
-      
-      const detailedFilepath = lastBillElement.children[2].querySelectorAll('a')[1].getAttribute('href')
+    if (lastBillElement.children[2].querySelectorAll('a')[1] !== undefined) {
+      const detailedFilepath = lastBillElement.children[2]
+        .querySelectorAll('a')[1]
+        .getAttribute('href')
       const detailed = detailedFilepath.match('detail') ? true : false
       const detailedBill = {
         ...computedLastBill
       }
-      detailedBill.filename = await getFileName(date, amount, currency, detailed)
+      detailedBill.filename = await getFileName(
+        date,
+        amount,
+        currency,
+        detailed
+      )
       const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
       const response = await ky.get(fileurl).blob()
       const dataUri = await blobToBase64(response)
@@ -272,32 +317,40 @@ class TemplateContentScript extends ContentScript {
     computedLastBill.dataUri = dataUri
     lastBill.push(computedLastBill)
     return lastBill
-
   }
 
-  async findOldBills(){
+  async findOldBills() {
     let oldBills = []
-    const allBillsElements = document.querySelectorAll('div[class="sr-container-content-line"]')
+    const allBillsElements = document.querySelectorAll(
+      'div[class="sr-container-content-line"]'
+    )
     for (const oneBill of allBillsElements) {
       const rawAmount = oneBill.children[0].querySelector('span').innerHTML
-      const fullAmount = rawAmount.replace(/&nbsp;/g,'').replace(/ /g,'').replace(/\n/g,'')
+      const fullAmount = rawAmount
+        .replace(/&nbsp;/g, '')
+        .replace(/ /g, '')
+        .replace(/\n/g, '')
       const amount = parseFloat(fullAmount.replace('€', '').replace(',', '.'))
       const currency = fullAmount.replace(/[0-9]*/g, '').replace(',', '')
       const rawDate = oneBill.children[1].querySelector('span').innerHTML
       const dateArray = rawDate.split(' ')
       const day = dateArray[0]
       const month = computeMonth(dateArray[1])
-      const year = dateArray [2]
+      const year = dateArray[2]
       const date = `${day}-${month}-${year}`
-      const rawPaymentDate = oneBill.children[1].innerHTML.replace(/\n/g,'').replace(/ /g,'').match(/([0-9]{2}[a-zûé]{3,4}.?-)/g)
-      const filepath = oneBill.children[4].querySelector('a').getAttribute('href')
+      const rawPaymentDate = oneBill.children[1].innerHTML
+        .replace(/\n/g, '')
+        .replace(/ /g, '')
+        .match(/([0-9]{2}[a-zûé]{3,4}.?-)/g)
+      const filepath = oneBill.children[4]
+        .querySelector('a')
+        .getAttribute('href')
       const fileurl = `${BASE_CLIENT_URL}${filepath}`
-      
-      
+
       let computedBill = {
         amount,
-        currency : currency === '€' ? 'EUR' : currency,
-        date : new Date(`${month}/${day}/${year}`),
+        currency: currency === '€' ? 'EUR' : currency,
+        date: new Date(`${month}/${day}/${year}`),
         filename: await getFileName(date, amount, currency),
         vendor: 'sfr',
         fileAttributes: {
@@ -311,25 +364,34 @@ class TemplateContentScript extends ContentScript {
           }
         }
       }
-      //After the first year of bills, paymentDate is not given anymore
-      //So we need to check if the bill has a defined paymentDate
-      if(rawPaymentDate !== null){
+      // After the first year of bills, paymentDate is not given anymore
+      // So we need to check if the bill has a defined paymentDate
+      if (rawPaymentDate !== null) {
         const paymentDay = rawPaymentDate[0].match(/[0-9]{2}/g)
         const rawPaymentMonth = rawPaymentDate[0].match(/[a-zûé]{3,4}\.?/g)
         const paymentMonth = computeMonth(rawPaymentMonth[0])
         // Assigning the same year founded for the bill's creation date
         // as it is not provided, assuming the bill has been paid on the same year
         const paymentYear = year
-        
-        computedBill.paymentDate = new Date(`${paymentMonth}/${paymentDay}/${paymentYear}`)
+
+        computedBill.paymentDate = new Date(
+          `${paymentMonth}/${paymentDay}/${paymentYear}`
+        )
       }
-      if(oneBill.children[4].querySelectorAll('a')[1] !== undefined) {
-        const detailedFilepath = oneBill.children[4].querySelectorAll('a')[1].getAttribute('href')
+      if (oneBill.children[4].querySelectorAll('a')[1] !== undefined) {
+        const detailedFilepath = oneBill.children[4]
+          .querySelectorAll('a')[1]
+          .getAttribute('href')
         const detailed = detailedFilepath.match('detail') ? true : false
         const detailedBill = {
           ...computedBill
         }
-        detailedBill.filename = await getFileName(date, amount, currency, detailed)
+        detailedBill.filename = await getFileName(
+          date,
+          amount,
+          currency,
+          detailed
+        )
         const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
         const response = await ky.get(fileurl).blob()
         const dataUri = await blobToBase64(response)
@@ -340,32 +402,33 @@ class TemplateContentScript extends ContentScript {
       const dataUri = await blobToBase64(response)
       computedBill.dataUri = dataUri
       oldBills.push(computedBill)
-      
     }
     this.log('Old bills fetched')
     return oldBills
-
   }
 
-  async getReloginPage(){
-    if(document.querySelector('#password')){
+  async getReloginPage() {
+    if (document.querySelector('#password')) {
       return true
     }
     return false
   }
-
 }
 
 const connector = new TemplateContentScript()
-connector.init({ additionalExposedMethodsNames: [
-  'getUserMail',
-  'getMoreBills',
-  'getBills',
-  'getReloginPage',
-  'getUserIdentity',
-] }).catch(err => {
-  console.warn(err)
-})
+connector
+  .init({
+    additionalExposedMethodsNames: [
+      'getUserMail',
+      'getMoreBills',
+      'getBills',
+      'getReloginPage',
+      'getUserIdentity'
+    ]
+  })
+  .catch(err => {
+    console.warn(err)
+  })
 
 function sleep(delay) {
   return new Promise(resolve => {
@@ -374,7 +437,9 @@ function sleep(delay) {
 }
 
 function getFileName(date, amount, currency, detailed) {
-  return `${date.replace(/\//g,'-')}_sfr_${amount}${currency}${detailed ? '_detailed' : ''}.pdf`
+  return `${date.replace(/\//g, '-')}_sfr_${amount}${currency}${
+    detailed ? '_detailed' : ''
+  }.pdf`
 }
 
 function computeMonth(month) {
@@ -419,4 +484,3 @@ function computeMonth(month) {
   }
   return computedMonth
 }
-

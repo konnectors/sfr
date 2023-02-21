@@ -1,39 +1,54 @@
 {
-  "version": "1.0.0",
-  "name": "Template",
+  "version": "2.0.0",
+  "name": "Sfr",
   "type": "konnector",
   "language": "node",
-  "icon": "icon.png",
-  "slug": "template",
-  "source": "git@github.com:konnectors/template_ccc.git",
-  "editor": "Cozy",
-  "vendor_link": "https://books.toscrape.com/",
-  "categories": [
-    "transport"
-  ],
-  "fields": { },
   "clientSide": true,
-  "langs": [
-    "fr"
+  "icon": "icon.svg",
+  "slug": "sfr",
+  "source": "git@github.com:konnectors/sfr.git",
+  "editor": "Cozy",
+  "vendor_link": "https://www.sfr.fr/",
+  "categories": [
+    "telecom",
+    "isp"
   ],
   "folders": [
     {
       "defaultDir": "$administrative/$konnector/$account"
     }
   ],
+  "fields": { },
   "permissions": {
+    "carbon_copy": {
+      "type": "io.cozy.certified.carbon_copy"
+    },
     "bills": {
       "type": "io.cozy.bills"
     },
     "files": {
       "type": "io.cozy.files"
+    },
+    "identities": {
+      "type": "io.cozy.identities"
     }
   },
+  "developer": {
+    "name": "Cozy Cloud",
+    "url": "https://cozy.io"
+  },
+  "langs": [
+    "fr",
+    "en"
+  ],
   "locales": {
     "fr": {
-      "short_description": "Récupère la liste de livres",
-      "long_description": "Récupère la liste de livre sur le site exemple",
+      "short_description": "Récupère vos factures Sfr",
+      "long_description": "Récupère vos factures Sfr sur les sites respectif. Une fois votre authentication effectuée, le connecteur va detecter la redirection et sauvegardée vos factures disponibles en fonction du site présenté.",
       "permissions": {
+        "carbon_copy": {
+          "description": "Utilisé pour certifier que vos fichiers sont copie conforme avec les documents d'origine"
+        },
         "bills": {
           "description": "Utilisé pour sauver les données des factures"
         },
@@ -41,6 +56,29 @@
           "description": "Utilisé pour sauvegarder les factures"
         }
       }
+    },
+    "en": {
+      "short_description": "Fetch a list of Sfr invoices",
+      "long_description": "Fetch a list of Sfr invoices on the respective websites. Once you've been authenticated, the konnector will detects the redirection and save your available bills based on presented website.",
+      "permissions": {
+        "carbon_copy": {
+          "description": "Required for carbon copy documents"
+        },
+        "bills": {
+          "description": "Required to save the bills data"
+        },
+        "files": {
+          "description": "Required to save the bills"
+        }
+      }
     }
-  }
+  },
+  "qualification_labels": [
+    "isp_invoice"
+  ],
+  "features": [
+    "METADATA_DEDUP",
+    "CARBON_COPY",
+    "DOC_QUALIFICATION_V2"
+  ]
 }

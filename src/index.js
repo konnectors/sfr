@@ -40,7 +40,7 @@ class TemplateContentScript extends ContentScript {
   }
 
   async waitForUserAuthentication() {
-    this.log('waitForUserAuthentication starts')
+    this.log('info', 'waitForUserAuthentication starts')
     await this.setWorkerState({ visible: true })
     await this.runInWorkerUntilTrue({ method: 'waitForAuthenticated' })
     await this.setWorkerState({ visible: false })
@@ -52,7 +52,7 @@ class TemplateContentScript extends ContentScript {
     const sourceAccountId = await this.runInWorker('getUserMail')
     await this.runInWorker('getUserIdentity')
     if (sourceAccountId === 'UNKNOWN_ERROR') {
-      this.log("Couldn't get a sourceAccountIdentifier, using default")
+      this.log('info', "Couldn't get a sourceAccountIdentifier, using default")
       return { sourceAccountIdentifier: DEFAULT_SOURCE_ACCOUNT_IDENTIFIER }
     }
     return {
@@ -61,7 +61,7 @@ class TemplateContentScript extends ContentScript {
   }
 
   async fetch(context) {
-    this.log('Fetch starts')
+    this.log('info', 'Fetch starts')
     await this.clickAndWait(
       `a[href="${INFOS_CONSO_URL}"]`,
       `a[href="${BILLS_URL_PATH}"]`
@@ -87,7 +87,7 @@ class TemplateContentScript extends ContentScript {
     await this.waitForElementInWorker(`${LOGOUT_SELECTOR}`)
     const reloginPage = await this.runInWorker('getReloginPage')
     if (reloginPage) {
-      this.log('Login expired, new authentication is needed')
+      this.log('debug', 'Login expired, new authentication is needed')
       await this.waitForUserAuthentication()
       await this.saveCredentials(this.store.userCredentials)
       return true
@@ -116,7 +116,7 @@ class TemplateContentScript extends ContentScript {
         loginField,
         passwordField
       )
-      this.log('Sendin userCredentials to Pilot')
+      this.log('debug', 'Sendin userCredentials to Pilot')
       this.sendToPilot({
         userCredentials
       })
@@ -125,14 +125,14 @@ class TemplateContentScript extends ContentScript {
       document.location.href === HOMEPAGE_URL &&
       document.querySelector(`${LOGOUT_SELECTOR}`)
     ) {
-      this.log('Auth Check succeeded')
+      this.log('info', 'Auth Check succeeded')
       return true
     }
     return false
   }
 
   async findAndSendCredentials(login, password) {
-    this.log('findAndSendCredentials starts')
+    this.log('debug', 'findAndSendCredentials starts')
     let userLogin = login.value
     let userPassword = password.value
     const userCredentials = {
@@ -151,6 +151,7 @@ class TemplateContentScript extends ContentScript {
   }
 
   async getUserIdentity() {
+    this.log('debug', 'getUserIdentity starts')
     const givenName = document
       .querySelector('#nomTitulaire')
       .innerHTML.split(' ')[0]
@@ -216,28 +217,29 @@ class TemplateContentScript extends ContentScript {
   async getMoreBills() {
     const moreBillsSelector = 'button[onclick="plusFacture(); return false;"]'
     while (document.querySelector(`${moreBillsSelector}`) !== null) {
-      this.log('moreBillsButton detected, clicking')
+      this.log('debug', 'moreBillsButton detected, clicking')
       const moreBillsButton = document.querySelector(`${moreBillsSelector}`)
       moreBillsButton.click()
       // Here, we need to wait for the older bills to load on the page
       await sleep(3)
     }
-    this.log('No more moreBills button')
+    this.log('debug', 'No more moreBills button')
   }
 
   async getBills() {
     const lastBill = await this.findLastBill()
-    this.log('Last bill returned, getting old ones')
+    this.log('debug', 'Last bill returned, getting old ones')
     const oldBills = await this.findOldBills()
     const allBills = lastBill.concat(oldBills)
-    this.log('Old bills returned, sending to Pilot')
+    this.log('debug', 'Old bills returned, sending to Pilot')
     await this.sendToPilot({
       allBills
     })
-    this.log('getBills done')
+    this.log('debug', 'getBills done')
   }
 
   async findLastBill() {
+    this.log('debug', 'findLastBill starts')
     let lastBill = []
     const lastBillElement = document.querySelector(
       'div[class="sr-inline sr-xs-block "]'
@@ -320,6 +322,7 @@ class TemplateContentScript extends ContentScript {
   }
 
   async findOldBills() {
+    this.log('debug', 'findOldBills starts')
     let oldBills = []
     const allBillsElements = document
       .querySelector('#blocAjax')
@@ -403,7 +406,7 @@ class TemplateContentScript extends ContentScript {
       computedBill.dataUri = dataUri
       oldBills.push(computedBill)
     }
-    this.log('Old bills fetched')
+    this.log('debug', 'Old bills fetched')
     return oldBills
   }
 

@@ -11,7 +11,8 @@ const HOMEPAGE_URL =
   'https://www.sfr.fr/mon-espace-client/#sfrclicid=EC_mire_Me-Connecter'
 const PERSONAL_INFOS_URL =
   'https://espace-client.sfr.fr/infospersonnelles/contrat/informations/'
-const LOGOUT_URL = 'https://www.sfr.fr/cas/logout?url=https://www.sfr.fr/'
+const LOGOUT_SELECTOR =
+  'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Furl%3Dhttps%3A//www.sfr.fr/"]'
 const INFOS_CONSO_URL = 'https://www.sfr.fr/routage/info-conso'
 const BILLS_URL_PATH =
   '/facture-mobile/consultation#sfrintid=EC_telecom_mob-abo_mob-factpaiement'
@@ -50,7 +51,6 @@ class TemplateContentScript extends ContentScript {
     await this.clickAndWait(`a[href="${PERSONAL_INFOS_URL}"]`, '#emailContact')
     const sourceAccountId = await this.runInWorker('getUserMail')
     await this.runInWorker('getUserIdentity')
-    // await this.waitForElementInWorker('[pause]')
     if (sourceAccountId === 'UNKNOWN_ERROR') {
       this.log("Couldn't get a sourceAccountIdentifier, using default")
       return { sourceAccountIdentifier: DEFAULT_SOURCE_ACCOUNT_IDENTIFIER }
@@ -82,8 +82,9 @@ class TemplateContentScript extends ContentScript {
   }
 
   async authWithCredentials() {
+    this.log('info', 'authWithCredentials starts')
     await this.goto(CLIENT_SPACE_URL)
-    await this.waitForElementInWorker(`a[href="${LOGOUT_URL}"]`)
+    await this.waitForElementInWorker(`${LOGOUT_SELECTOR}`)
     const reloginPage = await this.runInWorker('getReloginPage')
     if (reloginPage) {
       this.log('Login expired, new authentication is needed')
@@ -95,6 +96,7 @@ class TemplateContentScript extends ContentScript {
   }
 
   async authWithoutCredentials() {
+    this.log('info', 'authWithoutCredentials starts')
     await this.goto(CLIENT_SPACE_URL)
     await this.waitForElementInWorker('#username')
     await this.waitForUserAuthentication()
@@ -121,9 +123,7 @@ class TemplateContentScript extends ContentScript {
     }
     if (
       document.location.href === HOMEPAGE_URL &&
-      document.querySelector(
-        'a[href="https://www.sfr.fr/cas/logout?url=https://www.sfr.fr/"]'
-      )
+      document.querySelector(`${LOGOUT_SELECTOR}`)
     ) {
       this.log('Auth Check succeeded')
       return true
@@ -240,7 +240,7 @@ class TemplateContentScript extends ContentScript {
   async findLastBill() {
     let lastBill = []
     const lastBillElement = document.querySelector(
-      'div[class="sr-inline sr-xs-block sr-margin-t-35"]'
+      'div[class="sr-inline sr-xs-block "]'
     )
     const rawAmount = lastBillElement
       .querySelectorAll('div')[0]
@@ -267,7 +267,7 @@ class TemplateContentScript extends ContentScript {
     const paymentMonth = paymentArray[1]
     const paymentYear = paymentArray[2]
     const filepath = lastBillElement
-      .querySelectorAll('div')[4]
+      .querySelectorAll('div')[3]
       .querySelector('a')
       .getAttribute('href')
     const fileurl = `${BASE_CLIENT_URL}${filepath}`
@@ -321,9 +321,9 @@ class TemplateContentScript extends ContentScript {
 
   async findOldBills() {
     let oldBills = []
-    const allBillsElements = document.querySelectorAll(
-      'div[class="sr-container-content-line"]'
-    )
+    const allBillsElements = document
+      .querySelector('#blocAjax')
+      .querySelectorAll('.sr-container-content-line')
     for (const oneBill of allBillsElements) {
       const rawAmount = oneBill.children[0].querySelector('span').innerHTML
       const fullAmount = rawAmount

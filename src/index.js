@@ -72,6 +72,9 @@ class TemplateContentScript extends ContentScript {
     )
     await this.runInWorker('getMoreBills')
     await this.runInWorker('getBills')
+    if (this.store.userCredentials) {
+      await this.saveCredentials(this.store.userCredentials)
+    }
     await this.saveIdentity(this.store.userIdentity)
     await this.saveBills(this.store.allBills, {
       context,
@@ -89,7 +92,6 @@ class TemplateContentScript extends ContentScript {
     if (reloginPage) {
       this.log('debug', 'Login expired, new authentication is needed')
       await this.waitForUserAuthentication()
-      await this.saveCredentials(this.store.userCredentials)
       return true
     }
     return true
@@ -100,7 +102,6 @@ class TemplateContentScript extends ContentScript {
     await this.goto(CLIENT_SPACE_URL)
     await this.waitForElementInWorker('#username')
     await this.waitForUserAuthentication()
-    await this.saveCredentials(this.store.userCredentials)
     return true
   }
 

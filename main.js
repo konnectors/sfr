@@ -68,6 +68,8 @@ var _wrapTimer = __webpack_require__(43);
 
 var _umd = _interopRequireDefault(__webpack_require__(45));
 
+var _package = _interopRequireDefault(__webpack_require__(46));
+
 var _window;
 
 var _log = (0, _minilog.default)('ContentScript class');
@@ -210,7 +212,7 @@ var ContentScript = /*#__PURE__*/function () {
                 this.bridge = new _LauncherBridge.default({
                   localWindow: window
                 });
-                exposedMethodsNames = ['setContentScriptType', 'ensureAuthenticated', 'ensureNotAuthenticated', 'checkAuthenticated', 'waitForAuthenticated', 'waitForElementNoReload', 'getUserDataFromWebsite', 'fetch', 'click', 'fillText', 'storeFromWorker', 'clickAndWait', 'getCookiesByDomain', 'getCookieByDomainAndName', 'downloadFileInWorker'];
+                exposedMethodsNames = ['setContentScriptType', 'ensureAuthenticated', 'ensureNotAuthenticated', 'checkAuthenticated', 'waitForAuthenticated', 'waitForElementNoReload', 'getUserDataFromWebsite', 'fetch', 'click', 'fillText', 'storeFromWorker', 'clickAndWait', 'getCookiesByDomain', 'getCookieByDomainAndName', 'downloadFileInWorker', 'getCliskVersion'];
 
                 if (options.additionalExposedMethodsNames) {
                   exposedMethodsNames.push.apply(exposedMethodsNames, options.additionalExposedMethodsNames);
@@ -1452,6 +1454,34 @@ var ContentScript = /*#__PURE__*/function () {
       }
 
       return fetch;
+    }()
+    /**
+     * Returns the current clisk version number in package.json file
+     */
+
+  }, {
+    key: "getCliskVersion",
+    value: function () {
+      var _getCliskVersion = (0, _asyncToGenerator2.default)( /*#__PURE__*/_regenerator.default.mark(function _callee30() {
+        return _regenerator.default.wrap(function _callee30$(_context30) {
+          while (1) {
+            switch (_context30.prev = _context30.next) {
+              case 0:
+                return _context30.abrupt("return", _package.default.version);
+
+              case 1:
+              case "end":
+                return _context30.stop();
+            }
+          }
+        }, _callee30);
+      }));
+
+      function getCliskVersion() {
+        return _getCliskVersion.apply(this, arguments);
+      }
+
+      return getCliskVersion;
     }()
   }]);
   return ContentScript;
@@ -4852,6 +4882,13 @@ module.exports = _defineProperty, module.exports.__esModule = true, module.expor
 
 /***/ }),
 /* 46 */
+/***/ ((module) => {
+
+"use strict";
+module.exports = JSON.parse('{"name":"cozy-clisk","version":"0.11.0","description":"All the libs needed to run a cozy client connector","repository":{"type":"git","url":"git+https://github.com/konnectors/libs.git"},"files":["dist"],"keywords":["konnector"],"main":"dist/index.js","author":"doubleface <christophe@cozycloud.cc>","license":"MIT","bugs":{"url":"https://github.com/konnectors/libs/issues"},"homepage":"https://github.com/konnectors/libs#readme","scripts":{"lint":"eslint \'src/**/*.js\'","prepublishOnly":"yarn run build","build":"babel --root-mode upward src/ -d dist/ --copy-files --verbose --ignore \'**/*.spec.js\',\'**/*.spec.jsx\'","test":"jest src"},"devDependencies":{"@babel/core":"^7.20.12","babel-jest":"^29.3.1","babel-preset-cozy-app":"^2.0.4","jest":"^29.3.1","jest-environment-jsdom":"^29.3.1","typescript":"^4.9.5"},"dependencies":{"@cozy/minilog":"^1.0.0","bluebird-retry":"^0.11.0","cozy-client":"^34.11.0","ky":"^0.25.1","lodash":"^4.17.21","p-wait-for":"^3.0.0","post-me":"^0.4.5"},"gitHead":"fd9ef8de0a2183f22d5fc1cd87b121af5f7ed899"}');
+
+/***/ }),
+/* 47 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4861,11 +4898,11 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "HTTPError": () => (/* reexport safe */ _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_3__.HTTPError),
 /* harmony export */   "TimeoutError": () => (/* reexport safe */ _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__.TimeoutError)
 /* harmony export */ });
-/* harmony import */ var _core_Ky_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(47);
-/* harmony import */ var _core_constants_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(48);
-/* harmony import */ var _utils_merge_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(50);
-/* harmony import */ var _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(49);
-/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(53);
+/* harmony import */ var _core_Ky_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(48);
+/* harmony import */ var _core_constants_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(49);
+/* harmony import */ var _utils_merge_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(51);
+/* harmony import */ var _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(50);
+/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(54);
 /*! MIT License © Sindre Sorhus */
 
 
@@ -4889,7 +4926,7 @@ const ky = createInstance();
 //# sourceMappingURL=index.js.map
 
 /***/ }),
-/* 47 */
+/* 48 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -4897,13 +4934,13 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "Ky": () => (/* binding */ Ky)
 /* harmony export */ });
-/* harmony import */ var _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(49);
-/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(53);
-/* harmony import */ var _utils_merge_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(50);
-/* harmony import */ var _utils_normalize_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(52);
-/* harmony import */ var _utils_timeout_js__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(56);
-/* harmony import */ var _utils_delay_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(54);
-/* harmony import */ var _constants_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(48);
+/* harmony import */ var _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(50);
+/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(54);
+/* harmony import */ var _utils_merge_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(51);
+/* harmony import */ var _utils_normalize_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(53);
+/* harmony import */ var _utils_timeout_js__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(57);
+/* harmony import */ var _utils_delay_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(55);
+/* harmony import */ var _constants_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(49);
 
 
 
@@ -5204,7 +5241,7 @@ class Ky {
 //# sourceMappingURL=Ky.js.map
 
 /***/ }),
-/* 48 */
+/* 49 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5255,7 +5292,7 @@ const stop = Symbol('stop');
 //# sourceMappingURL=constants.js.map
 
 /***/ }),
-/* 49 */
+/* 50 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5298,7 +5335,7 @@ class HTTPError extends Error {
 //# sourceMappingURL=HTTPError.js.map
 
 /***/ }),
-/* 50 */
+/* 51 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5308,7 +5345,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "mergeHeaders": () => (/* binding */ mergeHeaders),
 /* harmony export */   "deepMerge": () => (/* binding */ deepMerge)
 /* harmony export */ });
-/* harmony import */ var _is_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(51);
+/* harmony import */ var _is_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(52);
 
 const validateAndMerge = (...sources) => {
     for (const source of sources) {
@@ -5361,7 +5398,7 @@ const deepMerge = (...sources) => {
 //# sourceMappingURL=merge.js.map
 
 /***/ }),
-/* 51 */
+/* 52 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5374,7 +5411,7 @@ const isObject = (value) => value !== null && typeof value === 'object';
 //# sourceMappingURL=is.js.map
 
 /***/ }),
-/* 52 */
+/* 53 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5383,7 +5420,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "normalizeRequestMethod": () => (/* binding */ normalizeRequestMethod),
 /* harmony export */   "normalizeRetryOptions": () => (/* binding */ normalizeRetryOptions)
 /* harmony export */ });
-/* harmony import */ var _core_constants_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(48);
+/* harmony import */ var _core_constants_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(49);
 
 const normalizeRequestMethod = (input) => _core_constants_js__WEBPACK_IMPORTED_MODULE_0__.requestMethods.includes(input) ? input.toUpperCase() : input;
 const retryMethods = ['get', 'put', 'head', 'delete', 'options', 'trace'];
@@ -5419,7 +5456,7 @@ const normalizeRetryOptions = (retry = {}) => {
 //# sourceMappingURL=normalize.js.map
 
 /***/ }),
-/* 53 */
+/* 54 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5443,7 +5480,7 @@ class TimeoutError extends Error {
 //# sourceMappingURL=TimeoutError.js.map
 
 /***/ }),
-/* 54 */
+/* 55 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5451,7 +5488,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "default": () => (/* binding */ delay)
 /* harmony export */ });
-/* harmony import */ var _errors_DOMException_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(55);
+/* harmony import */ var _errors_DOMException_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(56);
 // https://github.com/sindresorhus/delay/tree/ab98ae8dfcb38e1593286c94d934e70d14a4e111
 
 async function delay(ms, { signal }) {
@@ -5476,7 +5513,7 @@ async function delay(ms, { signal }) {
 //# sourceMappingURL=delay.js.map
 
 /***/ }),
-/* 55 */
+/* 56 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5504,7 +5541,7 @@ function composeAbortError(signal) {
 //# sourceMappingURL=DOMException.js.map
 
 /***/ }),
-/* 56 */
+/* 57 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5512,7 +5549,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "default": () => (/* binding */ timeout)
 /* harmony export */ });
-/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(53);
+/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(54);
 
 // `Promise.race()` workaround (#91)
 async function timeout(request, abortController, options) {
@@ -5622,7 +5659,7 @@ var __webpack_exports__ = {};
 __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(42);
-/* harmony import */ var ky__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(46);
+/* harmony import */ var ky__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(47);
 /* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(21);
 /* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(_cozy_minilog__WEBPACK_IMPORTED_MODULE_2__);
 

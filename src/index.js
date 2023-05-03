@@ -21,6 +21,16 @@ class TemplateContentScript extends ContentScript {
   // ////////
   // PILOT //
   // ////////
+  async navigateToLoginForm() {
+    await this.goto(CLIENT_SPACE_URL)
+    await Promise.race([
+      this.waitForElementInWorker('#username'),
+      this.waitForElementInWorker(
+        'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Furl%3Dhttps%253A//www.sfr.fr/"]'
+      )
+    ])
+  }
+
   async ensureAuthenticated() {
     const credentials = await this.getCredentials()
     if (credentials) {
@@ -37,6 +47,20 @@ class TemplateContentScript extends ContentScript {
       }
       return false
     }
+  }
+
+  async ensureNotAuthenticated() {
+    this.log('info', 'ensureNotAuthenticate starts')
+    await this.navigateToLoginForm()
+    const authenticated = await this.runInWorker('checkAuthenticated')
+    if (!authenticated) {
+      return true
+    }
+    await this.clickAndWait(
+      'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Furl%3Dhttps%253A//www.sfr.fr/"]',
+      'a[href="https://www.sfr.fr/mon-espace-client/"]'
+    )
+    return true
   }
 
   async waitForUserAuthentication() {

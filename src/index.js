@@ -6,13 +6,13 @@ const log = Minilog('ContentScript')
 Minilog.enable('sfrCCC')
 
 const BASE_CLIENT_URL = 'https://espace-client.sfr.fr'
-const CLIENT_SPACE_URL = 'https://www.sfr.fr/mon-espace-client'
+const CLIENT_SPACE_URL = 'https://www.sfr.fr/mon-espace-client/'
 const HOMEPAGE_URL =
   'https://www.sfr.fr/mon-espace-client/#sfrclicid=EC_mire_Me-Connecter'
 const PERSONAL_INFOS_URL =
   'https://espace-client.sfr.fr/infospersonnelles/contrat/informations/'
 const LOGOUT_SELECTOR =
-  'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Furl%3Dhttps%3A//www.sfr.fr/"]'
+  'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Furl%3Dhttps%253A//www.sfr.fr/"]'
 const INFOS_CONSO_URL = 'https://www.sfr.fr/routage/info-conso'
 const BILLS_URL_PATH =
   '/facture-mobile/consultation#sfrintid=EC_telecom_mob-abo_mob-factpaiement'
@@ -22,6 +22,7 @@ class TemplateContentScript extends ContentScript {
   // PILOT //
   // ////////
   async navigateToLoginForm() {
+    this.log('info', 'navigateToLoginForm starts')
     await this.goto(CLIENT_SPACE_URL)
     await Promise.race([
       this.waitForElementInWorker('#username'),
@@ -32,6 +33,7 @@ class TemplateContentScript extends ContentScript {
   }
 
   async ensureAuthenticated() {
+    await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     if (credentials) {
       const auth = await this.authWithCredentials()
@@ -54,8 +56,10 @@ class TemplateContentScript extends ContentScript {
     await this.navigateToLoginForm()
     const authenticated = await this.runInWorker('checkAuthenticated')
     if (!authenticated) {
+      this.log('info', 'Not auth, returning true')
       return true
     }
+    this.log('info', 'Already logged, logging out')
     await this.clickAndWait(
       'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Furl%3Dhttps%253A//www.sfr.fr/"]',
       'a[href="https://www.sfr.fr/mon-espace-client/"]'
@@ -151,6 +155,13 @@ class TemplateContentScript extends ContentScript {
       document.querySelector(`${LOGOUT_SELECTOR}`)
     ) {
       this.log('info', 'Auth Check succeeded')
+      return true
+    }
+    if (
+      document.location.href === CLIENT_SPACE_URL &&
+      document.querySelector(`${LOGOUT_SELECTOR}`)
+    ) {
+      this.log('info', 'Session found, returning true')
       return true
     }
     return false

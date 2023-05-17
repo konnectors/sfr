@@ -5312,7 +5312,8 @@ const supportsRequestStreams = (() => {
     let duplexAccessed = false;
     let hasContentType = false;
     const supportsReadableStream = typeof globalThis.ReadableStream === 'function';
-    if (supportsReadableStream) {
+    const supportsRequest = typeof globalThis.Request === 'function';
+    if (supportsReadableStream && supportsRequest) {
         hasContentType = new globalThis.Request('https://a.com', {
             body: new globalThis.ReadableStream(),
             method: 'POST',
@@ -5722,13 +5723,12 @@ const log = _cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default()('ContentScript'
 _cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default().enable('sfrCCC')
 
 const BASE_CLIENT_URL = 'https://espace-client.sfr.fr'
-const CLIENT_SPACE_URL = 'https://www.sfr.fr/mon-espace-client'
+const CLIENT_SPACE_URL = 'https://www.sfr.fr/mon-espace-client/'
 const HOMEPAGE_URL =
   'https://www.sfr.fr/mon-espace-client/#sfrclicid=EC_mire_Me-Connecter'
 const PERSONAL_INFOS_URL =
   'https://espace-client.sfr.fr/infospersonnelles/contrat/informations/'
-const LOGOUT_SELECTOR =
-  'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Furl%3Dhttps%3A//www.sfr.fr/"]'
+const LOGOUT_SELECTOR = 'a[href*="openid-connect/logout'
 const INFOS_CONSO_URL = 'https://www.sfr.fr/routage/info-conso'
 const BILLS_URL_PATH =
   '/facture-mobile/consultation#sfrintid=EC_telecom_mob-abo_mob-factpaiement'
@@ -5737,7 +5737,18 @@ class TemplateContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPOR
   // ////////
   // PILOT //
   // ////////
+  async navigateToLoginForm() {
+    this.log('info', 'navigateToLoginForm starts')
+    await this.goto(CLIENT_SPACE_URL)
+    await Promise.race([
+      this.waitForElementInWorker('#username'),
+      this.waitForElementInWorker(LOGOUT_SELECTOR)
+    ])
+  }
+
   async ensureAuthenticated() {
+    this.log('info', 'ensureAuthenticated')
+    await this.navigateToLoginForm()
     const credentials = await this.getCredentials()
     if (credentials) {
       const auth = await this.authWithCredentials()
@@ -5753,6 +5764,22 @@ class TemplateContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPOR
       }
       return false
     }
+  }
+
+  async ensureNotAuthenticated() {
+    this.log('info', 'ensureNotAuthenticate starts')
+    await this.navigateToLoginForm()
+    const authenticated = await this.runInWorker('checkAuthenticated')
+    if (!authenticated) {
+      this.log('info', 'Not auth, returning true')
+      return true
+    }
+    this.log('info', 'Already logged, logging out')
+    await this.clickAndWait(
+      'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Furl%3Dhttps%253A//www.sfr.fr/"]',
+      'a[href="https://www.sfr.fr/mon-espace-client/"]'
+    )
+    return true
   }
 
   async waitForUserAuthentication() {
@@ -5843,6 +5870,13 @@ class TemplateContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPOR
       document.querySelector(`${LOGOUT_SELECTOR}`)
     ) {
       this.log('info', 'Auth Check succeeded')
+      return true
+    }
+    if (
+      document.location.href === CLIENT_SPACE_URL &&
+      document.querySelector(`${LOGOUT_SELECTOR}`)
+    ) {
+      this.log('info', 'Session found, returning true')
       return true
     }
     return false
@@ -6044,7 +6078,12 @@ class TemplateContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPOR
     const allBillsElements = document
       .querySelector('#blocAjax')
       .querySelectorAll('.sr-container-content-line')
+    let counter = 0
     for (const oneBill of allBillsElements) {
+      this.log(
+        'debug',
+        `fetching bill ${counter++}/${allBillsElements.length}...`
+      )
       const rawAmount = oneBill.children[0].querySelector('span').innerHTML
       const fullAmount = rawAmount
         .replace(/&nbsp;/g, '')
@@ -6163,42 +6202,54 @@ function getFileName(date, amount, currency, detailed) {
 }
 
 function computeMonth(month) {
-  let computedMonth = ''
+  let computedMonth = null
   switch (month) {
     case 'janv.':
+    case 'Jan':
       computedMonth = '01'
       break
     case 'févr.':
+    case 'Feb':
       computedMonth = '02'
       break
     case 'mars':
+    case 'Mar':
       computedMonth = '03'
       break
     case 'avr.':
+    case 'Apr':
       computedMonth = '04'
       break
     case 'mai':
+    case 'May':
       computedMonth = '05'
       break
     case 'juin':
+    case 'Jun':
       computedMonth = '06'
       break
     case 'juil.':
+    case 'Jul':
       computedMonth = '07'
       break
     case 'août':
+    case 'Aug':
       computedMonth = '08'
       break
     case 'sept.':
+    case 'Sep':
       computedMonth = '09'
       break
     case 'oct.':
+    case 'Oct':
       computedMonth = '10'
       break
     case 'nov.':
+    case 'Nov':
       computedMonth = '11'
       break
     case 'déc.':
+    case 'Dec':
       computedMonth = '12'
       break
   }

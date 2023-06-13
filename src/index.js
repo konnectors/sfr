@@ -1,6 +1,4 @@
 import { ContentScript } from 'cozy-clisk/dist/contentscript'
-import { blobToBase64 } from 'cozy-clisk/dist/contentscript/utils'
-import ky from 'ky'
 import Minilog from '@cozy/minilog'
 const log = Minilog('ContentScript')
 Minilog.enable('sfrCCC')
@@ -16,7 +14,7 @@ const INFOS_CONSO_URL = 'https://www.sfr.fr/routage/info-conso'
 const BILLS_URL_PATH =
   '/facture-mobile/consultation#sfrintid=EC_telecom_mob-abo_mob-factpaiement'
 const DEFAULT_SOURCE_ACCOUNT_IDENTIFIER = 'sfr'
-class TemplateContentScript extends ContentScript {
+class SfrContentScript extends ContentScript {
   // ////////
   // PILOT //
   // ////////
@@ -102,12 +100,14 @@ class TemplateContentScript extends ContentScript {
     await this.runInWorker('getMoreBills')
     await this.runInWorker('getBills')
     await this.saveIdentity(this.store.userIdentity)
-    await this.saveBills(this.store.allBills, {
-      context,
-      fileIdAttributes: ['filename'],
-      contentType: 'application/pdf',
-      qualificationLabel: 'phone_invoice'
-    })
+    for (const bill of this.store.allBills) {
+      await this.saveBills([bill], {
+        context,
+        fileIdAttributes: ['filename'],
+        contentType: 'application/pdf',
+        qualificationLabel: 'phone_invoice'
+      })
+    }
   }
 
   async authWithCredentials() {
@@ -314,6 +314,7 @@ class TemplateContentScript extends ContentScript {
       paymentDate: new Date(`${paymentMonth}/${paymentDay}/${paymentYear}`),
       filename: await getFileName(rawDate, amount, currency),
       vendor: 'sfr',
+      fileurl,
       fileAttributes: {
         metadata: {
           contentAuthor: 'sfr',
@@ -333,24 +334,16 @@ class TemplateContentScript extends ContentScript {
       const detailedBill = {
         ...computedLastBill
       }
+      const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
       detailedBill.filename = await getFileName(
         date,
         amount,
         currency,
-        detailed
+        detailed,
+        fileurl
       )
-      const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
-      const response = await ky.get(fileurl).blob()
-      const dataUri = await blobToBase64(response)
-      detailedBill.dataUri = dataUri
       lastBill.push(detailedBill)
     }
-    // As it's impossible to have the pilot on the same domain as the worker
-    // to match domain's specific cookie for the download to be done by saveFiles
-    // we need to fetch the stream then pass it to the pilot
-    const response = await ky.get(fileurl).blob()
-    const dataUri = await blobToBase64(response)
-    computedLastBill.dataUri = dataUri
     lastBill.push(computedLastBill)
     return lastBill
   }
@@ -394,6 +387,7 @@ class TemplateContentScript extends ContentScript {
         currency: currency === '€' ? 'EUR' : currency,
         date: new Date(`${month}/${day}/${year}`),
         filename: await getFileName(date, amount, currency),
+        fileurl,
         vendor: 'sfr',
         fileAttributes: {
           metadata: {
@@ -428,21 +422,16 @@ class TemplateContentScript extends ContentScript {
         const detailedBill = {
           ...computedBill
         }
+        const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
         detailedBill.filename = await getFileName(
           date,
           amount,
           currency,
-          detailed
+          detailed,
+          fileurl
         )
-        const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
-        const response = await ky.get(fileurl).blob()
-        const dataUri = await blobToBase64(response)
-        detailedBill.dataUri = dataUri
         oldBills.push(detailedBill)
       }
-      const response = await ky.get(fileurl).blob()
-      const dataUri = await blobToBase64(response)
-      computedBill.dataUri = dataUri
       oldBills.push(computedBill)
     }
     this.log('debug', 'Old bills fetched')
@@ -457,7 +446,7 @@ class TemplateContentScript extends ContentScript {
   }
 }
 
-const connector = new TemplateContentScript()
+const connector = new SfrContentScript()
 connector
   .init({
     additionalExposedMethodsNames: [

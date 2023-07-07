@@ -20,56 +20,44 @@ class TemplateContentScript extends ContentScript {
   // ////////
   // PILOT //
   // ////////
-  async navigateToLoginForm() {
-    this.log('info', 'navigateToLoginForm starts')
-    await this.goto(CLIENT_SPACE_URL)
-    await Promise.race([
-      this.waitForElementInWorker('#username'),
-      this.waitForElementInWorker(LOGOUT_SELECTOR)
-    ])
-  }
-
   async ensureAuthenticated() {
     this.log('info', 'ensureAuthenticated')
-    await this.navigateToLoginForm()
-    const credentials = await this.getCredentials()
-    if (credentials) {
-      const auth = await this.authWithCredentials()
-      if (auth) {
-        return true
-      }
-      return false
-    }
-    if (!credentials) {
-      const auth = await this.authWithoutCredentials()
-      if (auth) {
-        return true
-      }
-      return false
-    }
+    await this.goto(CLIENT_SPACE_URL)
+    await this.ensureLoginForm()
+    await this.waitForUserAuthentication()
   }
 
-  async ensureNotAuthenticated() {
-    this.log('info', 'ensureNotAuthenticate starts')
-    await this.navigateToLoginForm()
+  async ensureLoginForm() {
+    this.log('info', 'ensureLoginForm starts')
+    await this.goto(CLIENT_SPACE_URL)
+    await Promise.race([
+      this.waitForElementInWorker('#username'), // SFR Login form
+      this.waitForElementInWorker(LOGOUT_SELECTOR) // SFR connected OR RED connected
+    ])
     const authenticated = await this.runInWorker('checkAuthenticated')
-    if (!authenticated) {
-      this.log('info', 'Not auth, returning true')
-      return true
+    if (authenticated === false) {
+      this.log('info', 'SFR Login form detected')
+      return
+    } else {
+      this.log('info', 'SFR Already logged, logging out, go to form')
+      await this.runInWorker(
+        'click',
+        'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Furl%3Dhttps%253A//www.sfr.fr/"]'
+      )
+      await sleep(3)
+      await this.waitForElementInWorker(
+        'a[href="https://www.sfr.fr/mon-espace-client/"]'
+      )
+      await this.goto(CLIENT_SPACE_URL)
+      await this.waitForElementInWorker('#username')
+      return
     }
-    this.log('info', 'Already logged, logging out')
-    await this.clickAndWait(
-      'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Furl%3Dhttps%253A//www.sfr.fr/"]',
-      'a[href="https://www.sfr.fr/mon-espace-client/"]'
-    )
-    return true
   }
 
   async waitForUserAuthentication() {
     this.log('info', 'waitForUserAuthentication starts')
 
     const credentials = await this.getCredentials()
-
     if (credentials) {
       this.log(
         'debug',

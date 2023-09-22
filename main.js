@@ -6216,6 +6216,9 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
           return false
         } else {
           const currentContract = await this.getCurrentContract()
+          if (!currentContract) {
+            return false
+          }
           const result = currentContract.text === contract.text
           return result
         }
@@ -6501,11 +6504,19 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   }
 
   async getCurrentContract() {
-    const contracts = await this.getContracts()
-    const currentContract = contracts.find(
-      contract => contract.id === 'current'
-    )
-    return currentContract
+    try {
+      const contracts = await this.getContracts()
+      const currentContract = contracts.find(
+        contract => contract.id === 'current'
+      )
+      return currentContract
+    } catch (err) {
+      this.log(
+        'debug',
+        `Error while trying to get current contract ${err.message}`
+      )
+      return false
+    }
   }
 
   async getMoreBills() {

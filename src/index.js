@@ -316,7 +316,7 @@ class SfrContentScript extends ContentScript {
       .filter(el => !el.getAttribute('class'))
       .map(el => ({
         id: el.getAttribute('id') || 'current',
-        text: el.innerText.trim()
+        text: el.innerHTML.trim()
       }))
     return contracts
   }

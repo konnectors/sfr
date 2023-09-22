@@ -6340,11 +6340,10 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
       'button[onclick="plusFacture(); return false;"]'
     )
     await this.runInWorker('getMoreBills')
-    await this.runInWorker('getBills')
+    await this.runInWorker('getBills', contractName)
     await this.saveBills(this.store.allBills, {
       context,
-      subPath: contractName,
-      fileIdAttributes: ['filename'],
+      fileIdAttributes: ['subPath', 'filename'],
       contentType: 'application/pdf',
       qualificationLabel: 'phone_invoice'
     })
@@ -6499,7 +6498,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
       .filter(el => !el.getAttribute('class'))
       .map(el => ({
         id: el.getAttribute('id') || 'current',
-        text: el.innerText.trim()
+        text: el.innerHTML.trim()
       }))
     return contracts
   }
@@ -6532,10 +6531,10 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     this.log('debug', 'No more moreBills button')
   }
 
-  async getBills() {
-    const lastBill = await this.findLastBill()
+  async getBills(contractName) {
+    const lastBill = await this.findLastBill(contractName)
     this.log('debug', 'Last bill returned, getting old ones')
-    const oldBills = await this.findOldBills()
+    const oldBills = await this.findOldBills(contractName)
     const allBills = lastBill.concat(oldBills)
     this.log('debug', 'Old bills returned, sending to Pilot')
     await this.sendToPilot({
@@ -6544,7 +6543,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     this.log('debug', 'getBills done')
   }
 
-  async findLastBill() {
+  async findLastBill(contractName) {
     this.log('debug', 'findLastBill starts')
     let lastBill = []
     const lastBillElement = document.querySelector(
@@ -6586,6 +6585,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
       paymentDate: new Date(`${paymentMonth}/${paymentDay}/${paymentYear}`),
       filename: await getFileName(rawDate, amount, currency),
       vendor: 'sfr',
+      subPath: contractName,
       fileAttributes: {
         metadata: {
           contentAuthor: 'sfr',
@@ -6627,7 +6627,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     return lastBill
   }
 
-  async findOldBills() {
+  async findOldBills(contractName) {
     this.log('debug', 'findOldBills starts')
     let oldBills = []
     const allBillsElements = document
@@ -6667,6 +6667,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
         date: new Date(`${month}/${day}/${year}`),
         filename: await getFileName(date, amount, currency),
         vendor: 'sfr',
+        subPath: contractName,
         fileAttributes: {
           metadata: {
             contentAuthor: 'sfr',

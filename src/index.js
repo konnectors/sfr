@@ -27,31 +27,32 @@ class SfrContentScript extends ContentScript {
   }
 
   async waitForCurrentContract(contract) {
-      await waitFor(
-        async () => {
-          const el = document.querySelector(`li[id='${contract.id}']`)
-          if (el) {
-            el.click()
+    await waitFor(
+      async () => {
+        const el = document.querySelector(`li[id='${contract.id}']`)
+        if (el) {
+          el.click()
+          return false
+        } else {
+          const currentContract = await this.getCurrentContract()
+          if (!currentContract) {
             return false
-          } else {
-            const currentContract = await this.getCurrentContract()
-            const result = currentContract.text === contract.text
-            return result
           }
-        },
-        {
-          interval: 1000,
-          timeout: {
-            milliseconds: 10000,
-            message: new TimeoutError(
-              'waitForCurrentContract ' +
-                contract.text +
-                ' timed out after 10sec'
-            )
-          }
+          const result = currentContract.text === contract.text
+          return result
         }
-      )
-      return true
+      },
+      {
+        interval: 1000,
+        timeout: {
+          milliseconds: 10000,
+          message: new TimeoutError(
+            'waitForCurrentContract ' + contract.text + ' timed out after 10sec'
+          )
+        }
+      }
+    )
+    return true
   }
 
   async ensureNotAuthenticated() {
@@ -322,11 +323,19 @@ class SfrContentScript extends ContentScript {
   }
 
   async getCurrentContract() {
-    const contracts = await this.getContracts()
-    const currentContract = contracts.find(
-      contract => contract.id === 'current'
-    )
-    return currentContract
+    try {
+      const contracts = await this.getContracts()
+      const currentContract = contracts.find(
+        contract => contract.id === 'current'
+      )
+      return currentContract
+    } catch (err) {
+      this.log(
+        'debug',
+        `Error while trying to get current contract ${err.message}`
+      )
+      return false
+    }
   }
 
   async getMoreBills() {

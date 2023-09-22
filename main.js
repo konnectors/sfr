@@ -6315,6 +6315,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     const contracts = await this.runInWorker('getContracts')
     for (const contract of contracts) {
       const contractName = contract.text
+      this.log('info', `fetching contract ${contractName}`)
       await this.goto(CLIENT_SPACE_URL)
       await this.waitForElementInWorker(
         `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`

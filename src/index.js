@@ -2,6 +2,7 @@ import { ContentScript } from 'cozy-clisk/dist/contentscript'
 import { blobToBase64 } from 'cozy-clisk/dist/contentscript/utils'
 import ky from 'ky'
 import Minilog from '@cozy/minilog'
+import waitFor, { TimeoutError } from 'p-wait-for'
 const log = Minilog('ContentScript')
 Minilog.enable('sfrCCC')
 
@@ -12,23 +13,49 @@ const HOMEPAGE_URL =
 const PERSONAL_INFOS_URL =
   'https://espace-client.sfr.fr/infospersonnelles/contrat/informations/'
 const LOGOUT_SELECTOR = 'a[href*="openid-connect/logout'
-const INFOS_CONSO_URL = 'https://www.sfr.fr/routage/info-conso'
 const BILLS_URL_PATH =
   '/facture-mobile/consultation#sfrintid=EC_telecom_mob-abo_mob-factpaiement'
-const DEFAULT_SOURCE_ACCOUNT_IDENTIFIER = 'sfr'
-class TemplateContentScript extends ContentScript {
+class SfrContentScript extends ContentScript {
   // ////////
   // PILOT //
   // ////////
   async ensureAuthenticated() {
-    this.log('info', 'ensureAuthenticated')
-    await this.goto(CLIENT_SPACE_URL)
-    await this.ensureLoginForm()
+    this.log('info', '🤖 ensureAuthenticated starts')
+    // we always force logout to avoid conflicts with red accounts
+    await this.ensureNotAuthenticated()
     await this.waitForUserAuthentication()
   }
 
-  async ensureLoginForm() {
-    this.log('info', 'ensureLoginForm starts')
+  async waitForCurrentContract(contract) {
+      await waitFor(
+        async () => {
+          const el = document.querySelector(`li[id='${contract.id}']`)
+          if (el) {
+            el.click()
+            return false
+          } else {
+            const currentContract = await this.getCurrentContract()
+            const result = currentContract.text === contract.text
+            return result
+          }
+        },
+        {
+          interval: 1000,
+          timeout: {
+            milliseconds: 10000,
+            message: new TimeoutError(
+              'waitForCurrentContract ' +
+                contract.text +
+                ' timed out after 10sec'
+            )
+          }
+        }
+      )
+      return true
+  }
+
+  async ensureNotAuthenticated() {
+    this.log('info', '🤖 ensureNotAuthenticated starts')
     await this.goto(CLIENT_SPACE_URL)
     await Promise.race([
       this.waitForElementInWorker('#username'), // SFR Login form
@@ -55,7 +82,7 @@ class TemplateContentScript extends ContentScript {
   }
 
   async waitForUserAuthentication() {
-    this.log('info', 'waitForUserAuthentication starts')
+    this.log('info', '🤖 waitForUserAuthentication starts')
 
     const credentials = await this.getCredentials()
     if (credentials) {
@@ -79,13 +106,14 @@ class TemplateContentScript extends ContentScript {
   }
 
   async getUserDataFromWebsite() {
+    this.log('info', '🤖 getUserDataFromWebsite starts')
     await this.waitForElementInWorker(`a[href="${PERSONAL_INFOS_URL}"]`)
     await this.clickAndWait(`a[href="${PERSONAL_INFOS_URL}"]`, '#emailContact')
     const sourceAccountId = await this.runInWorker('getUserMail')
     await this.runInWorker('getUserIdentity')
     if (sourceAccountId === 'UNKNOWN_ERROR') {
-      this.log('info', "Couldn't get a sourceAccountIdentifier, using default")
-      return { sourceAccountIdentifier: DEFAULT_SOURCE_ACCOUNT_IDENTIFIER }
+      this.log('debug', "Couldn't get a sourceAccountIdentifier")
+      throw new Error('Could not get a sourceAccountIdentifier')
     }
     return {
       sourceAccountIdentifier: sourceAccountId
@@ -93,23 +121,46 @@ class TemplateContentScript extends ContentScript {
   }
 
   async fetch(context) {
-    this.log('info', 'Fetch starts')
+    this.log('info', '🤖 fetch starts')
     if (this.store.userCredentials) {
       await this.saveCredentials(this.store.userCredentials)
     }
-    await this.clickAndWait(
-      `a[href="${INFOS_CONSO_URL}"]`,
-      `a[href="${BILLS_URL_PATH}"]`
+    await this.saveIdentity(this.store.userIdentity)
+    await this.goto(CLIENT_SPACE_URL)
+    await this.waitForElementInWorker(
+      `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`
     )
-    await this.clickAndWait(
-      `a[href="${BILLS_URL_PATH}"]`,
+    const contracts = await this.runInWorker('getContracts')
+    for (const contract of contracts) {
+      const contractName = contract.text
+      await this.goto(CLIENT_SPACE_URL)
+      await this.waitForElementInWorker(
+        `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`
+      )
+      // first contract is the current one
+      await this.goto('https://www.sfr.fr/routage/info-conso')
+      await this.waitForElementInWorker('.sr-tabs')
+      if (contract.id !== 'current') {
+        await this.runInWorkerUntilTrue({
+          method: 'waitForCurrentContract',
+          args: [contract]
+        })
+      }
+      await this.fetchCurrentContractBills(contractName, context)
+    }
+  }
+
+  async fetchCurrentContractBills(contractName, context) {
+    this.log('info', '🤖 Fetching current contract: ' + contractName)
+    await this.goto(BASE_CLIENT_URL + BILLS_URL_PATH)
+    await this.waitForElementInWorker(
       'button[onclick="plusFacture(); return false;"]'
     )
     await this.runInWorker('getMoreBills')
     await this.runInWorker('getBills')
-    await this.saveIdentity(this.store.userIdentity)
     await this.saveBills(this.store.allBills, {
       context,
+      subPath: contractName,
       fileIdAttributes: ['filename'],
       contentType: 'application/pdf',
       qualificationLabel: 'phone_invoice'
@@ -252,6 +303,30 @@ class TemplateContentScript extends ContentScript {
       })
     }
     await this.sendToPilot({ userIdentity })
+  }
+
+  async getContracts() {
+    const contracts = Array.from(
+      document
+        .querySelector(
+          `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`
+        )
+        .parentNode.parentNode.querySelectorAll('li')
+    )
+      .filter(el => !el.getAttribute('class'))
+      .map(el => ({
+        id: el.getAttribute('id') || 'current',
+        text: el.innerText.trim()
+      }))
+    return contracts
+  }
+
+  async getCurrentContract() {
+    const contracts = await this.getContracts()
+    const currentContract = contracts.find(
+      contract => contract.id === 'current'
+    )
+    return currentContract
   }
 
   async getMoreBills() {
@@ -463,7 +538,7 @@ class TemplateContentScript extends ContentScript {
   }
 }
 
-const connector = new TemplateContentScript()
+const connector = new SfrContentScript()
 connector
   .init({
     additionalExposedMethodsNames: [
@@ -471,7 +546,9 @@ connector
       'getMoreBills',
       'getBills',
       'getReloginPage',
-      'getUserIdentity'
+      'getUserIdentity',
+      'getContracts',
+      'waitForCurrentContract'
     ]
   })
   .catch(err => {

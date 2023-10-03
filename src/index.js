@@ -55,13 +55,48 @@ class SfrContentScript extends ContentScript {
     return true
   }
 
+  async ensureRedNotAuthenticated() {
+    this.log('info', '🤖 ensureRedNotAuthenticated starts')
+    await this.runInWorker(
+      'click',
+      'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Fred%3Dtrue%26url%3Dhttps://www.red-by-sfr.fr"]'
+    )
+    await sleep(3)
+    // Sometimes the logout lead you to sfr's website, so we cover both possibilities just in case.
+    await Promise.race([
+      this.waitForElementInWorker(
+        'a[href="https://www.red-by-sfr.fr/mon-espace-client/?casforcetheme=espaceclientred#redclicid=X_Menu_EspaceClient"]'
+      ),
+      this.waitForElementInWorker(
+        'a[href="https://www.sfr.fr/mon-espace-client/"]'
+      )
+    ])
+    return true
+  }
+
   async ensureNotAuthenticated() {
     this.log('info', '🤖 ensureNotAuthenticated starts')
     await this.goto(CLIENT_SPACE_URL)
+    await sleep(1) // let some time to start the load of the next page
     await Promise.race([
-      this.waitForElementInWorker('#username'), // SFR Login form
-      this.waitForElementInWorker(LOGOUT_SELECTOR) // SFR connected OR RED connected
+      this.waitForElementInWorker('#username'),
+      this.waitForElementInWorker('label[title=Client]'),
+      this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
     ])
+
+    const isRed = await this.runInWorker('isRedUrl')
+    if (isRed) {
+      this.log('info', 'Found red url. Running ensureRedNotAuthenticated')
+      await this.ensureRedNotAuthenticated()
+      await this.goto(CLIENT_SPACE_URL)
+      await Promise.race([
+        this.waitForElementInWorker('#username'), // SFR Login form
+        this.waitForElementInWorker('label[title=Client]'),
+        this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
+      ])
+      return true
+    }
+
     const authenticated = await this.runInWorker('checkAuthenticated')
     if (authenticated === false) {
       this.log('info', 'SFR Login form detected')
@@ -191,6 +226,29 @@ class SfrContentScript extends ContentScript {
   // ////////
   // WORKER//
   // ////////
+
+  isRedUrl() {
+    const currentUrl = window.location.href
+    const isRedLoginForm = currentUrl.includes(
+      'service=https%3A%2F%2Fwww.red-by-sfr.fr'
+    )
+    const isRedEspaceClient = currentUrl.includes(
+      'www.red-by-sfr.fr/mon-espace-client'
+    )
+    const result = isRedLoginForm || isRedEspaceClient
+    return result
+  }
+
+  async waitForRedUrl() {
+    await waitFor(this.isRedUrl, {
+      interval: 100,
+      timeout: {
+        milliseconds: 10000,
+        message: new TimeoutError('waitForRedUrl timed out after 10sec')
+      }
+    })
+    return true
+  }
 
   async checkAuthenticated() {
     const loginField = document.querySelector('#username')
@@ -558,7 +616,9 @@ connector
       'getReloginPage',
       'getUserIdentity',
       'getContracts',
-      'waitForCurrentContract'
+      'waitForCurrentContract',
+      'waitForRedUrl',
+      'isRedUrl'
     ]
   })
   .catch(err => {

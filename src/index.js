@@ -3,6 +3,7 @@ import { blobToBase64 } from 'cozy-clisk/dist/contentscript/utils'
 import ky from 'ky'
 import Minilog from '@cozy/minilog'
 import waitFor, { TimeoutError } from 'p-wait-for'
+import pRetry from 'p-retry'
 const log = Minilog('ContentScript')
 Minilog.enable('sfrCCC')
 
@@ -22,7 +23,15 @@ class SfrContentScript extends ContentScript {
   async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
     // we always force logout to avoid conflicts with red accounts
-    await this.ensureNotAuthenticated()
+    await pRetry(this.ensureNotAuthenticated.bind(this), {
+      retries: 3,
+      onFailedAttempt: error => {
+        this.log(
+          'info',
+          `Logout attempt ${error.attemptNumber} failed. There are ${error.retriesLeft} retries left.`
+        )
+      }
+    })
     await this.waitForUserAuthentication()
   }
 

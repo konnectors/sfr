@@ -5409,15 +5409,437 @@ module.exports = JSON.parse('{"name":"cozy-clisk","version":"0.24.0","descriptio
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "AbortError": () => (/* binding */ AbortError),
+/* harmony export */   "default": () => (/* binding */ pRetry)
+/* harmony export */ });
+/* harmony import */ var retry__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(47);
+/* harmony import */ var is_network_error__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(50);
+
+
+
+class AbortError extends Error {
+	constructor(message) {
+		super();
+
+		if (message instanceof Error) {
+			this.originalError = message;
+			({message} = message);
+		} else {
+			this.originalError = new Error(message);
+			this.originalError.stack = this.stack;
+		}
+
+		this.name = 'AbortError';
+		this.message = message;
+	}
+}
+
+const decorateErrorWithCounts = (error, attemptNumber, options) => {
+	// Minus 1 from attemptNumber because the first attempt does not count as a retry
+	const retriesLeft = options.retries - (attemptNumber - 1);
+
+	error.attemptNumber = attemptNumber;
+	error.retriesLeft = retriesLeft;
+	return error;
+};
+
+async function pRetry(input, options) {
+	return new Promise((resolve, reject) => {
+		options = {
+			onFailedAttempt() {},
+			retries: 10,
+			...options,
+		};
+
+		const operation = retry__WEBPACK_IMPORTED_MODULE_0__.operation(options);
+
+		const abortHandler = () => {
+			operation.stop();
+			reject(options.signal?.reason);
+		};
+
+		if (options.signal && !options.signal.aborted) {
+			options.signal.addEventListener('abort', abortHandler, {once: true});
+		}
+
+		const cleanUp = () => {
+			options.signal?.removeEventListener('abort', abortHandler);
+			operation.stop();
+		};
+
+		operation.attempt(async attemptNumber => {
+			try {
+				const result = await input(attemptNumber);
+				cleanUp();
+				resolve(result);
+			} catch (error) {
+				try {
+					if (!(error instanceof Error)) {
+						throw new TypeError(`Non-error was thrown: "${error}". You should only throw errors.`);
+					}
+
+					if (error instanceof AbortError) {
+						throw error.originalError;
+					}
+
+					if (error instanceof TypeError && !(0,is_network_error__WEBPACK_IMPORTED_MODULE_1__["default"])(error)) {
+						throw error;
+					}
+
+					await options.onFailedAttempt(decorateErrorWithCounts(error, attemptNumber, options));
+
+					if (!operation.retry(error)) {
+						throw operation.mainError();
+					}
+				} catch (finalError) {
+					decorateErrorWithCounts(finalError, attemptNumber, options);
+					cleanUp();
+					reject(finalError);
+				}
+			}
+		});
+	});
+}
+
+
+/***/ }),
+/* 47 */
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+module.exports = __webpack_require__(48);
+
+/***/ }),
+/* 48 */
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+
+var RetryOperation = __webpack_require__(49);
+
+exports.operation = function(options) {
+  var timeouts = exports.timeouts(options);
+  return new RetryOperation(timeouts, {
+      forever: options && (options.forever || options.retries === Infinity),
+      unref: options && options.unref,
+      maxRetryTime: options && options.maxRetryTime
+  });
+};
+
+exports.timeouts = function(options) {
+  if (options instanceof Array) {
+    return [].concat(options);
+  }
+
+  var opts = {
+    retries: 10,
+    factor: 2,
+    minTimeout: 1 * 1000,
+    maxTimeout: Infinity,
+    randomize: false
+  };
+  for (var key in options) {
+    opts[key] = options[key];
+  }
+
+  if (opts.minTimeout > opts.maxTimeout) {
+    throw new Error('minTimeout is greater than maxTimeout');
+  }
+
+  var timeouts = [];
+  for (var i = 0; i < opts.retries; i++) {
+    timeouts.push(this.createTimeout(i, opts));
+  }
+
+  if (options && options.forever && !timeouts.length) {
+    timeouts.push(this.createTimeout(i, opts));
+  }
+
+  // sort the array numerically ascending
+  timeouts.sort(function(a,b) {
+    return a - b;
+  });
+
+  return timeouts;
+};
+
+exports.createTimeout = function(attempt, opts) {
+  var random = (opts.randomize)
+    ? (Math.random() + 1)
+    : 1;
+
+  var timeout = Math.round(random * Math.max(opts.minTimeout, 1) * Math.pow(opts.factor, attempt));
+  timeout = Math.min(timeout, opts.maxTimeout);
+
+  return timeout;
+};
+
+exports.wrap = function(obj, options, methods) {
+  if (options instanceof Array) {
+    methods = options;
+    options = null;
+  }
+
+  if (!methods) {
+    methods = [];
+    for (var key in obj) {
+      if (typeof obj[key] === 'function') {
+        methods.push(key);
+      }
+    }
+  }
+
+  for (var i = 0; i < methods.length; i++) {
+    var method   = methods[i];
+    var original = obj[method];
+
+    obj[method] = function retryWrapper(original) {
+      var op       = exports.operation(options);
+      var args     = Array.prototype.slice.call(arguments, 1);
+      var callback = args.pop();
+
+      args.push(function(err) {
+        if (op.retry(err)) {
+          return;
+        }
+        if (err) {
+          arguments[0] = op.mainError();
+        }
+        callback.apply(this, arguments);
+      });
+
+      op.attempt(function() {
+        original.apply(obj, args);
+      });
+    }.bind(obj, original);
+    obj[method].options = options;
+  }
+};
+
+
+/***/ }),
+/* 49 */
+/***/ ((module) => {
+
+function RetryOperation(timeouts, options) {
+  // Compatibility for the old (timeouts, retryForever) signature
+  if (typeof options === 'boolean') {
+    options = { forever: options };
+  }
+
+  this._originalTimeouts = JSON.parse(JSON.stringify(timeouts));
+  this._timeouts = timeouts;
+  this._options = options || {};
+  this._maxRetryTime = options && options.maxRetryTime || Infinity;
+  this._fn = null;
+  this._errors = [];
+  this._attempts = 1;
+  this._operationTimeout = null;
+  this._operationTimeoutCb = null;
+  this._timeout = null;
+  this._operationStart = null;
+  this._timer = null;
+
+  if (this._options.forever) {
+    this._cachedTimeouts = this._timeouts.slice(0);
+  }
+}
+module.exports = RetryOperation;
+
+RetryOperation.prototype.reset = function() {
+  this._attempts = 1;
+  this._timeouts = this._originalTimeouts.slice(0);
+}
+
+RetryOperation.prototype.stop = function() {
+  if (this._timeout) {
+    clearTimeout(this._timeout);
+  }
+  if (this._timer) {
+    clearTimeout(this._timer);
+  }
+
+  this._timeouts       = [];
+  this._cachedTimeouts = null;
+};
+
+RetryOperation.prototype.retry = function(err) {
+  if (this._timeout) {
+    clearTimeout(this._timeout);
+  }
+
+  if (!err) {
+    return false;
+  }
+  var currentTime = new Date().getTime();
+  if (err && currentTime - this._operationStart >= this._maxRetryTime) {
+    this._errors.push(err);
+    this._errors.unshift(new Error('RetryOperation timeout occurred'));
+    return false;
+  }
+
+  this._errors.push(err);
+
+  var timeout = this._timeouts.shift();
+  if (timeout === undefined) {
+    if (this._cachedTimeouts) {
+      // retry forever, only keep last error
+      this._errors.splice(0, this._errors.length - 1);
+      timeout = this._cachedTimeouts.slice(-1);
+    } else {
+      return false;
+    }
+  }
+
+  var self = this;
+  this._timer = setTimeout(function() {
+    self._attempts++;
+
+    if (self._operationTimeoutCb) {
+      self._timeout = setTimeout(function() {
+        self._operationTimeoutCb(self._attempts);
+      }, self._operationTimeout);
+
+      if (self._options.unref) {
+          self._timeout.unref();
+      }
+    }
+
+    self._fn(self._attempts);
+  }, timeout);
+
+  if (this._options.unref) {
+      this._timer.unref();
+  }
+
+  return true;
+};
+
+RetryOperation.prototype.attempt = function(fn, timeoutOps) {
+  this._fn = fn;
+
+  if (timeoutOps) {
+    if (timeoutOps.timeout) {
+      this._operationTimeout = timeoutOps.timeout;
+    }
+    if (timeoutOps.cb) {
+      this._operationTimeoutCb = timeoutOps.cb;
+    }
+  }
+
+  var self = this;
+  if (this._operationTimeoutCb) {
+    this._timeout = setTimeout(function() {
+      self._operationTimeoutCb();
+    }, self._operationTimeout);
+  }
+
+  this._operationStart = new Date().getTime();
+
+  this._fn(this._attempts);
+};
+
+RetryOperation.prototype.try = function(fn) {
+  console.log('Using RetryOperation.try() is deprecated');
+  this.attempt(fn);
+};
+
+RetryOperation.prototype.start = function(fn) {
+  console.log('Using RetryOperation.start() is deprecated');
+  this.attempt(fn);
+};
+
+RetryOperation.prototype.start = RetryOperation.prototype.try;
+
+RetryOperation.prototype.errors = function() {
+  return this._errors;
+};
+
+RetryOperation.prototype.attempts = function() {
+  return this._attempts;
+};
+
+RetryOperation.prototype.mainError = function() {
+  if (this._errors.length === 0) {
+    return null;
+  }
+
+  var counts = {};
+  var mainError = null;
+  var mainErrorCount = 0;
+
+  for (var i = 0; i < this._errors.length; i++) {
+    var error = this._errors[i];
+    var message = error.message;
+    var count = (counts[message] || 0) + 1;
+
+    counts[message] = count;
+
+    if (count >= mainErrorCount) {
+      mainError = error;
+      mainErrorCount = count;
+    }
+  }
+
+  return mainError;
+};
+
+
+/***/ }),
+/* 50 */
+/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (/* binding */ isNetworkError)
+/* harmony export */ });
+const objectToString = Object.prototype.toString;
+
+const isError = value => objectToString.call(value) === '[object Error]';
+
+const errorMessages = new Set([
+	'Failed to fetch', // Chrome
+	'NetworkError when attempting to fetch resource.', // Firefox
+	'The Internet connection appears to be offline.', // Safari 16
+	'Load failed', // Safari 17+
+	'Network request failed', // `cross-fetch`
+	'fetch failed', // Undici (Node.js)
+]);
+
+function isNetworkError(error) {
+	const isValid = error
+		&& isError(error)
+		&& error.name === 'TypeError'
+		&& typeof error.message === 'string';
+
+	if (!isValid) {
+		return false;
+	}
+
+	// We do an extra check for Safari 17+ as it has a very generic error message.
+	// Network errors in Safari have no stack.
+	if (error.message === 'Load failed') {
+		return error.stack === undefined;
+	}
+
+	return errorMessages.has(error.message);
+}
+
+
+/***/ }),
+/* 51 */
+/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "HTTPError": () => (/* reexport safe */ _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_3__.HTTPError),
 /* harmony export */   "TimeoutError": () => (/* reexport safe */ _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__.TimeoutError),
 /* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
 /* harmony export */ });
-/* harmony import */ var _core_Ky_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(47);
-/* harmony import */ var _core_constants_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(48);
-/* harmony import */ var _utils_merge_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(50);
-/* harmony import */ var _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(49);
-/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(53);
+/* harmony import */ var _core_Ky_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(52);
+/* harmony import */ var _core_constants_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(53);
+/* harmony import */ var _utils_merge_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(55);
+/* harmony import */ var _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(54);
+/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(58);
 /*! MIT License © Sindre Sorhus */
 
 
@@ -5441,7 +5863,7 @@ const ky = createInstance();
 //# sourceMappingURL=index.js.map
 
 /***/ }),
-/* 47 */
+/* 52 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5449,13 +5871,13 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "Ky": () => (/* binding */ Ky)
 /* harmony export */ });
-/* harmony import */ var _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(49);
-/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(53);
-/* harmony import */ var _utils_merge_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(50);
-/* harmony import */ var _utils_normalize_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(52);
-/* harmony import */ var _utils_timeout_js__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(56);
-/* harmony import */ var _utils_delay_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(54);
-/* harmony import */ var _constants_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(48);
+/* harmony import */ var _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(54);
+/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(58);
+/* harmony import */ var _utils_merge_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(55);
+/* harmony import */ var _utils_normalize_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(57);
+/* harmony import */ var _utils_timeout_js__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(61);
+/* harmony import */ var _utils_delay_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(59);
+/* harmony import */ var _constants_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(53);
 
 
 
@@ -5756,7 +6178,7 @@ class Ky {
 //# sourceMappingURL=Ky.js.map
 
 /***/ }),
-/* 48 */
+/* 53 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5808,7 +6230,7 @@ const stop = Symbol('stop');
 //# sourceMappingURL=constants.js.map
 
 /***/ }),
-/* 49 */
+/* 54 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5851,7 +6273,7 @@ class HTTPError extends Error {
 //# sourceMappingURL=HTTPError.js.map
 
 /***/ }),
-/* 50 */
+/* 55 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5861,7 +6283,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "mergeHeaders": () => (/* binding */ mergeHeaders),
 /* harmony export */   "validateAndMerge": () => (/* binding */ validateAndMerge)
 /* harmony export */ });
-/* harmony import */ var _is_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(51);
+/* harmony import */ var _is_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(56);
 
 const validateAndMerge = (...sources) => {
     for (const source of sources) {
@@ -5914,7 +6336,7 @@ const deepMerge = (...sources) => {
 //# sourceMappingURL=merge.js.map
 
 /***/ }),
-/* 51 */
+/* 56 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5927,7 +6349,7 @@ const isObject = (value) => value !== null && typeof value === 'object';
 //# sourceMappingURL=is.js.map
 
 /***/ }),
-/* 52 */
+/* 57 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5936,7 +6358,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "normalizeRequestMethod": () => (/* binding */ normalizeRequestMethod),
 /* harmony export */   "normalizeRetryOptions": () => (/* binding */ normalizeRetryOptions)
 /* harmony export */ });
-/* harmony import */ var _core_constants_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(48);
+/* harmony import */ var _core_constants_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(53);
 
 const normalizeRequestMethod = (input) => _core_constants_js__WEBPACK_IMPORTED_MODULE_0__.requestMethods.includes(input) ? input.toUpperCase() : input;
 const retryMethods = ['get', 'put', 'head', 'delete', 'options', 'trace'];
@@ -5972,7 +6394,7 @@ const normalizeRetryOptions = (retry = {}) => {
 //# sourceMappingURL=normalize.js.map
 
 /***/ }),
-/* 53 */
+/* 58 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -5996,7 +6418,7 @@ class TimeoutError extends Error {
 //# sourceMappingURL=TimeoutError.js.map
 
 /***/ }),
-/* 54 */
+/* 59 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6004,7 +6426,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "default": () => (/* binding */ delay)
 /* harmony export */ });
-/* harmony import */ var _errors_DOMException_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(55);
+/* harmony import */ var _errors_DOMException_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(60);
 // https://github.com/sindresorhus/delay/tree/ab98ae8dfcb38e1593286c94d934e70d14a4e111
 
 async function delay(ms, { signal }) {
@@ -6029,7 +6451,7 @@ async function delay(ms, { signal }) {
 //# sourceMappingURL=delay.js.map
 
 /***/ }),
-/* 55 */
+/* 60 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6057,7 +6479,7 @@ function composeAbortError(signal) {
 //# sourceMappingURL=DOMException.js.map
 
 /***/ }),
-/* 56 */
+/* 61 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 "use strict";
@@ -6065,7 +6487,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "default": () => (/* binding */ timeout)
 /* harmony export */ });
-/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(53);
+/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(58);
 
 // `Promise.race()` workaround (#91)
 async function timeout(request, abortController, options) {
@@ -6175,10 +6597,12 @@ var __webpack_exports__ = {};
 __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(41);
-/* harmony import */ var ky__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(46);
+/* harmony import */ var ky__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(51);
 /* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(20);
 /* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(_cozy_minilog__WEBPACK_IMPORTED_MODULE_2__);
 /* harmony import */ var p_wait_for__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(18);
+/* harmony import */ var p_retry__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(46);
+
 
 
 
@@ -6203,7 +6627,15 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
     // we always force logout to avoid conflicts with red accounts
-    await this.ensureNotAuthenticated()
+    await (0,p_retry__WEBPACK_IMPORTED_MODULE_4__["default"])(this.ensureNotAuthenticated.bind(this), {
+      retries: 3,
+      onFailedAttempt: error => {
+        this.log(
+          'info',
+          `Logout attempt ${error.attemptNumber} failed. There are ${error.retriesLeft} retries left.`
+        )
+      }
+    })
     await this.waitForUserAuthentication()
   }
 
@@ -6236,13 +6668,48 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     return true
   }
 
+  async ensureRedNotAuthenticated() {
+    this.log('info', '🤖 ensureRedNotAuthenticated starts')
+    await this.runInWorker(
+      'click',
+      'a[href="https://www.sfr.fr/auth/realms/sfr/protocol/openid-connect/logout?redirect_uri=https%3A//www.sfr.fr/cas/logout%3Fred%3Dtrue%26url%3Dhttps://www.red-by-sfr.fr"]'
+    )
+    await sleep(3)
+    // Sometimes the logout lead you to sfr's website, so we cover both possibilities just in case.
+    await Promise.race([
+      this.waitForElementInWorker(
+        'a[href="https://www.red-by-sfr.fr/mon-espace-client/?casforcetheme=espaceclientred#redclicid=X_Menu_EspaceClient"]'
+      ),
+      this.waitForElementInWorker(
+        'a[href="https://www.sfr.fr/mon-espace-client/"]'
+      )
+    ])
+    return true
+  }
+
   async ensureNotAuthenticated() {
     this.log('info', '🤖 ensureNotAuthenticated starts')
     await this.goto(CLIENT_SPACE_URL)
+    await sleep(1) // let some time to start the load of the next page
     await Promise.race([
-      this.waitForElementInWorker('#username'), // SFR Login form
-      this.waitForElementInWorker(LOGOUT_SELECTOR) // SFR connected OR RED connected
+      this.waitForElementInWorker('#username'),
+      this.waitForElementInWorker('label[title=Client]'),
+      this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
     ])
+
+    const isRed = await this.runInWorker('isRedUrl')
+    if (isRed) {
+      this.log('info', 'Found red url. Running ensureRedNotAuthenticated')
+      await this.ensureRedNotAuthenticated()
+      await this.goto(CLIENT_SPACE_URL)
+      await Promise.race([
+        this.waitForElementInWorker('#username'), // SFR Login form
+        this.waitForElementInWorker('label[title=Client]'),
+        this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
+      ])
+      return true
+    }
+
     const authenticated = await this.runInWorker('checkAuthenticated')
     if (authenticated === false) {
       this.log('info', 'SFR Login form detected')
@@ -6372,6 +6839,29 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   // ////////
   // WORKER//
   // ////////
+
+  isRedUrl() {
+    const currentUrl = window.location.href
+    const isRedLoginForm = currentUrl.includes(
+      'service=https%3A%2F%2Fwww.red-by-sfr.fr'
+    )
+    const isRedEspaceClient = currentUrl.includes(
+      'www.red-by-sfr.fr/mon-espace-client'
+    )
+    const result = isRedLoginForm || isRedEspaceClient
+    return result
+  }
+
+  async waitForRedUrl() {
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_3__["default"])(this.isRedUrl, {
+      interval: 100,
+      timeout: {
+        milliseconds: 10000,
+        message: new p_wait_for__WEBPACK_IMPORTED_MODULE_3__.TimeoutError('waitForRedUrl timed out after 10sec')
+      }
+    })
+    return true
+  }
 
   async checkAuthenticated() {
     const loginField = document.querySelector('#username')
@@ -6611,7 +7101,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
         detailed
       )
       const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
-      const response = await ky__WEBPACK_IMPORTED_MODULE_4__["default"].get(fileurl).blob()
+      const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
       const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
       detailedBill.dataUri = dataUri
       lastBill.push(detailedBill)
@@ -6619,7 +7109,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     // As it's impossible to have the pilot on the same domain as the worker
     // to match domain's specific cookie for the download to be done by saveFiles
     // we need to fetch the stream then pass it to the pilot
-    const response = await ky__WEBPACK_IMPORTED_MODULE_4__["default"].get(fileurl).blob()
+    const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
     const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
     computedLastBill.dataUri = dataUri
     lastBill.push(computedLastBill)
@@ -6707,12 +7197,12 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
           detailed
         )
         const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
-        const response = await ky__WEBPACK_IMPORTED_MODULE_4__["default"].get(fileurl).blob()
+        const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
         const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
         detailedBill.dataUri = dataUri
         oldBills.push(detailedBill)
       }
-      const response = await ky__WEBPACK_IMPORTED_MODULE_4__["default"].get(fileurl).blob()
+      const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
       const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
       computedBill.dataUri = dataUri
       oldBills.push(computedBill)
@@ -6739,7 +7229,9 @@ connector
       'getReloginPage',
       'getUserIdentity',
       'getContracts',
-      'waitForCurrentContract'
+      'waitForCurrentContract',
+      'waitForRedUrl',
+      'isRedUrl'
     ]
   })
   .catch(err => {

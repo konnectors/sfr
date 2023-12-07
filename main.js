@@ -6759,8 +6759,8 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     await sleep(1) // let some time to start the load of the next page
     await Promise.race([
       this.waitForElementInWorker('#username'),
-      this.waitForElementInWorker('label[title=Client]'),
-      this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
+      this.waitForElementInWorker('label[title=Client]')
+      // this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
     ])
 
     const isRed = await this.runInWorker('isRedUrl')
@@ -6770,8 +6770,8 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
       await this.goto(CLIENT_SPACE_URL)
       await Promise.race([
         this.waitForElementInWorker('#username'), // SFR Login form
-        this.waitForElementInWorker('label[title=Client]'),
-        this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
+        this.waitForElementInWorker('label[title=Client]')
+        // this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
       ])
       return true
     }
@@ -6846,27 +6846,45 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
       `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`
     )
     const contracts = await this.runInWorker('getContracts')
-    // let isFirstContract = true
+    let isFirstContract = true
     await this.goto(CLIENT_SPACE_URL)
     await this.waitForElementInWorker(
       `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`
     )
     for (const contract of contracts) {
       const contractName = contract.text
+      // if (contract.id !== 'current') {
+      //   await this.runInWorkerUntilTrue({
+      //     method: 'waitForCurrentContract',
+      //     args: [contract]
+      //   })
+      // }
       if (contract.id !== 'current') {
-        await this.runInWorkerUntilTrue({
-          method: 'waitForCurrentContract',
-          args: [contract]
-        })
+        if (await this.isElementInWorker('#plusFac')) {
+          await this.evaluateInWorker(function removeElement() {
+            document.querySelector('#lastFacture').remove()
+          })
+        } else {
+          await this.evaluateInWorker(function removeElement() {
+            document
+              .querySelector('div[class="sr-inline sr-xs-block "]')
+              .remove()
+          })
+        }
+        await this.runInWorker('click', `li[id='${contract.id}']`)
+        await Promise.race([
+          this.waitForElementInWorker('div[class="sr-inline sr-xs-block"]'),
+          this.waitForElementInWorker('div[class="sr-inline sr-xs-block "]'),
+          this.waitForElementInWorker('#lastFacture')
+        ])
       }
-      await this.fetchCurrentContractBills(contractName, context)
-      // isFirstContract = false
+      await this.fetchCurrentContractBills(
+        contractName,
+        context,
+        isFirstContract
+      )
+      isFirstContract = false
     }
-  }
-
-  async setNextContractCookie(id) {
-    this.log('info', '📍️ setNextContractCookie starts')
-    document.cookie = `MLS=${encodeURIComponent(`${id}`)}; SameSite=None`
   }
 
   async fetchCurrentContractBills(contractName, context) {
@@ -6878,7 +6896,13 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
         'button[onclick="plusFacture(); return false;"]'
       )
     ])
-    // await this.waitForElementInWorker('[pause]')
+    // if (!isFirst) {
+    //   await this.waitForElementInWorker('[pause]')
+    // }
+    this.log('info', 'Got to sleep for 10 sec')
+    await sleep(10)
+    this.log('info', 'wake up')
+
     await this.runInWorker('getMoreBills')
     await this.runInWorker('getBills', contractName)
     await this.saveBills(this.store.allBills, {
@@ -7101,7 +7125,9 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     const moreBillsSelector = 'button[onclick="plusFacture(); return false;"]'
     const moreBillAltWrapperSelector = '#plusFacWrap'
     const moreBillAltSelector = '#plusFac'
-
+    // this.log('info', 'Got to sleep for 30 sec')
+    // await sleep(30)
+    // this.log('info', 'wake up')
     if (document.querySelector(moreBillsSelector)) {
       while (document.querySelector(`${moreBillsSelector}`) !== null) {
         this.log('debug', 'moreBillsButton detected, clicking')
@@ -7133,20 +7159,27 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   async getBills(contractName) {
     this.log('info', '📍️ getBills starts')
     let lastBill
+    let allBills
     // Selector of the alternative lastBill element
     if (document.querySelector('#lastFacture')) {
       this.log('info', 'sleeping for 3 sec')
       await sleep(3)
       this.log('info', 'wake up')
       lastBill = await this.findAltLastBill(contractName)
+      this.log('debug', 'Last bill returned, getting old ones')
+      const oldBills = await this.findAltOldBills(contractName)
+      allBills = lastBill.concat(oldBills)
+      this.log('info', `🏵️🏵️🏵️ allBills : ${JSON.stringify(allBills)}`)
+      this.log('debug', 'Old bills returned, sending to Pilot')
     } else {
       lastBill = await this.findLastBill(contractName)
+      this.log('debug', 'Last bill returned, getting old ones')
+      const oldBills = await this.findOldBills(contractName)
+      allBills = lastBill.concat(oldBills)
+      this.log('info', `🏵️🏵️🏵️ allBills : ${JSON.stringify(allBills)}`)
+      this.log('debug', 'Old bills returned, sending to Pilot')
     }
-    this.log('debug', 'Last bill returned, getting old ones')
-    const oldBills = await this.findOldBills(contractName)
-    const allBills = lastBill.concat(oldBills)
-    this.log('info', `🏵️🏵️🏵️ allBills : ${JSON.stringify(allBills)}`)
-    this.log('debug', 'Old bills returned, sending to Pilot')
+
     await this.sendToPilot({
       allBills
     })
@@ -7239,55 +7272,32 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   async findAltLastBill(contractName) {
     this.log('info', '📍️ findAltLastBill starts')
     let lastBill = []
-    this.log('info', 'before lastBillElement')
     const lastBillElement = document.querySelector(
-      'div[class="sr-inline sr-xs-block "]'
+      'div[class="sr-inline sr-xs-block"]'
     )
-    this.log('info', 'after lastBillElement')
     const rawAmount = lastBillElement
       .querySelectorAll('div')[0]
       .querySelector('span').innerHTML
-
-    this.log('info', 'after rawAmount')
-
     const fullAmount = rawAmount
       .replace(/&nbsp;/g, '')
       .replace(/ /g, '')
       .replace(/\n/g, '')
-    this.log('info', 'after fullAmount')
-
     const amount = parseFloat(fullAmount.replace('€', ''))
-    this.log('info', 'after amount')
     const currency = fullAmount.replace(/[0-9]*/g, '')
-    this.log('info', 'after currency')
     const rawDate = lastBillElement
       .querySelectorAll('div')[1]
-      .querySelectorAll('span')[1].innerHTML
-    this.log('info', 'after rawDate')
+      .querySelectorAll('div')[1].innerHTML
 
     const dateArray = rawDate.split('/')
-    this.log('info', 'after dateArray')
-    const day = dateArray[0]
-    const month = dateArray[1]
-    const year = dateArray[2]
-    const date = `${day}-${month}-${year}`
-    this.log('info', 'after date')
-    const rawPaymentDate = lastBillElement
-      .querySelectorAll('div')[1]
-      .querySelectorAll('span')[0].innerHTML
-    const paymentArray = rawPaymentDate.split('/')
-    const paymentDay = paymentArray[0]
-    const paymentMonth = paymentArray[1]
-    const paymentYear = paymentArray[2]
-    const filepath = lastBillElement
-      .querySelector('#lien-telecharger-pdf')
-      .getAttribute('href')
+    const day = dateArray[0].split('du')[1].trim()
+    const month = dateArray[1].trim()
+    const year = dateArray[2].trim()
+    const filepath = lastBillElement.querySelector('a').getAttribute('href')
     const fileurl = `${BASE_CLIENT_URL}${filepath}`
     const computedLastBill = {
       amount,
       currency: currency === '€' ? 'EUR' : currency,
       date: new Date(`${month}/${day}/${year}`),
-      paymentDate: new Date(`${paymentMonth}/${paymentDay}/${paymentYear}`),
       filename: await getFileName(rawDate, amount, currency),
       vendor: 'sfr',
       subPath: contractName,
@@ -7302,35 +7312,25 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
         }
       }
     }
-    if (lastBillElement.children[2].querySelectorAll('a')[1] !== undefined) {
-      const detailedFilepath = lastBillElement.children[2]
-        .querySelectorAll('a')[1]
-        .getAttribute('href')
-      const detailed = detailedFilepath.match('detail') ? true : false
-      const detailedBill = {
-        ...computedLastBill
-      }
-      detailedBill.filename = await getFileName(
-        date,
-        amount,
-        currency,
-        detailed
+    if (amount !== 0) {
+      const rawPaymentDate = lastBillElement
+        .querySelectorAll('div')[1]
+        .querySelectorAll('div')[0].innerHTML
+      const paymentArray = rawPaymentDate.split('/')
+      const paymentDay = paymentArray[0]
+      const paymentMonth = paymentArray[1]
+      const paymentYear = paymentArray[2]
+      const paymentDate = new Date(
+        `${paymentMonth}/${paymentDay}/${paymentYear}`
       )
-      const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
-      const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
-      const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
-      detailedBill.dataUri = dataUri
-      lastBill.push(detailedBill)
+      computedLastBill.paymentDate = paymentDate
     }
-    // As it's impossible to have the pilot on the same domain as the worker
-    // to match domain's specific cookie for the download to be done by saveFiles
-    // we need to fetch the stream then pass it to the pilot
+    this.log('info', `computedLastBill : ${JSON.stringify(computedLastBill)}`)
     const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
     const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
     computedLastBill.dataUri = dataUri
     lastBill.push(computedLastBill)
     this.log('info', `lastBill : ${JSON.stringify(lastBill)}`)
-
     return lastBill
   }
 
@@ -7431,6 +7431,126 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     return oldBills
   }
 
+  async findAltOldBills(contractName) {
+    this.log('info', '📍️ findAltOldBill starts')
+    let oldBills = []
+    const allBillsElements = document
+      .querySelector('#historique')
+      .querySelectorAll('.sr-container-content-line')
+    let counter = 0
+    for (const oneBill of allBillsElements) {
+      this.log(
+        'info',
+        `fetching bill ${counter + 1}/${allBillsElements.length}...`
+      )
+      const rawAmount = oneBill.children[0].querySelector('span').innerHTML
+      const fullAmount = rawAmount
+        .replace(/&nbsp;/g, '')
+        .replace(/ /g, '')
+        .replace(/\n/g, '')
+      const amount = parseFloat(fullAmount.replace('€', '').replace(',', '.'))
+      const currency = fullAmount.replace(/[0-9]*/g, '').replace(',', '')
+      const datesElements = Array.from(oneBill.children).filter(
+        element => element.tagName === 'SPAN'
+      )
+      const filepath = oneBill.querySelector('a').getAttribute('href')
+      const fileurl = `${BASE_CLIENT_URL}${filepath}`
+      let computedBill = {
+        amount,
+        currency: currency === '€' ? 'EUR' : currency,
+        vendor: 'sfr',
+        fileurl,
+        subPath: contractName,
+        fileAttributes: {
+          metadata: {
+            contentAuthor: 'sfr',
+            datetimeLabel: 'issueDate',
+            isSubscription: true,
+            issueDate: new Date(),
+            carbonCopy: true
+          }
+        }
+      }
+
+      if (datesElements.length >= 2) {
+        this.log('info', 'Found a payment date')
+        const rawPaymentDate =
+          datesElements[0].innerHTML.match(/\d{2}\/\d{2}\/\d{4}/g)[0]
+        const foundDate = rawPaymentDate.replace(/\//g, '-').trim()
+        const [paymentDay, paymentMonth, paymentYear] = foundDate.split('-')
+        const paymentDate = new Date(
+          `${paymentMonth}/${paymentDay}/${paymentYear}`
+        )
+        const innerhtmlIssueDate = datesElements[1].innerHTML
+        const foundIssueDate = innerhtmlIssueDate.split('-')[1].trim()
+        const [issueDay, issueMonth, issueYear] = foundIssueDate.split(/\//g)
+        const issueDate = new Date(`${issueMonth}/${issueDay}/${issueYear}`)
+        computedBill.paymentDate = paymentDate
+        computedBill.date = issueDate
+        computedBill.fileAttributes.metadata.datetime = issueDate
+        computedBill.filename = await getFileName(
+          `${issueDay}-${issueMonth}-${issueYear}`,
+          amount,
+          currency
+        )
+      } else {
+        this.log('info', 'Only one element present')
+        const elementInnerhtml = datesElements[0].innerHTML
+        if (elementInnerhtml.includes('Payé le')) {
+          const [innerhtmlPaymentDate, innerhtmlIssueDate] =
+            elementInnerhtml.split('- </span>')
+
+          const foundPaymentDate = innerhtmlPaymentDate
+            .split('le')[1]
+            .replace('</span>', '')
+            .trim()
+          const [paymentDay, paymentMonth, paymentYear] =
+            foundPaymentDate.split('/')
+          const paymentDate = new Date(
+            `${paymentMonth}/${paymentDay}/${paymentYear}`
+          )
+
+          const foundIssueDate = innerhtmlIssueDate
+            .split('mensuelle -')[1]
+            .replace('</span>', '')
+            .trim()
+          const [issueDay, issueMonth, issueYear] = foundIssueDate.split(/\//g)
+          const issueDate = new Date(`${issueMonth}/${issueDay}/${issueYear}`)
+          computedBill.paymentDate = paymentDate
+          computedBill.date = issueDate
+          computedBill.fileAttributes.metadata.datetime = issueDate
+          computedBill.filename = await getFileName(
+            `${issueDay}-${issueMonth}-${issueYear}`,
+            amount,
+            currency
+          )
+        } else {
+          this.log('dont includes payé le')
+          const foundIssueDate = elementInnerhtml.split('-')[1].trim()
+          this.log('foundIssueDate', foundIssueDate)
+          const [issueDay, issueMonth, issueYear] = foundIssueDate.split(/\//g)
+          const issueDate = new Date(`${issueMonth}/${issueDay}/${issueYear}`)
+          computedBill.date = issueDate
+          computedBill.fileAttributes.metadata.datetime = issueDate
+          computedBill.filename = await getFileName(
+            `${issueDay}-${issueMonth}-${issueYear}`,
+            amount,
+            currency
+          )
+        }
+      }
+      this.log('info', `altOldcomputedBill : ${JSON.stringify(computedBill)}`)
+      const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
+      const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
+      computedBill.dataUri = dataUri
+      oldBills.push(computedBill)
+      counter++
+    }
+    this.log('debug', 'Old bills fetched')
+    this.log('info', `oldBills : ${JSON.stringify(oldBills)}`)
+    return oldBills
+  }
+
   async getReloginPage() {
     this.log('info', '📍️ getReloginPage starts')
     if (document.querySelector('#password')) {
@@ -7452,8 +7572,7 @@ connector
       'getContracts',
       'waitForCurrentContract',
       'waitForRedUrl',
-      'isRedUrl',
-      'setNextContractCookie'
+      'isRedUrl'
     ]
   })
   .catch(err => {

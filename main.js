@@ -5888,691 +5888,6 @@ function isNetworkError(error) {
 }
 
 
-/***/ }),
-/* 51 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "HTTPError": () => (/* reexport safe */ _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_3__.HTTPError),
-/* harmony export */   "TimeoutError": () => (/* reexport safe */ _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__.TimeoutError),
-/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
-/* harmony export */ });
-/* harmony import */ var _core_Ky_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(52);
-/* harmony import */ var _core_constants_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(53);
-/* harmony import */ var _utils_merge_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(55);
-/* harmony import */ var _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(54);
-/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(58);
-/*! MIT License © Sindre Sorhus */
-
-
-
-const createInstance = (defaults) => {
-    // eslint-disable-next-line @typescript-eslint/promise-function-async
-    const ky = (input, options) => _core_Ky_js__WEBPACK_IMPORTED_MODULE_0__.Ky.create(input, (0,_utils_merge_js__WEBPACK_IMPORTED_MODULE_1__.validateAndMerge)(defaults, options));
-    for (const method of _core_constants_js__WEBPACK_IMPORTED_MODULE_2__.requestMethods) {
-        // eslint-disable-next-line @typescript-eslint/promise-function-async
-        ky[method] = (input, options) => _core_Ky_js__WEBPACK_IMPORTED_MODULE_0__.Ky.create(input, (0,_utils_merge_js__WEBPACK_IMPORTED_MODULE_1__.validateAndMerge)(defaults, options, { method }));
-    }
-    ky.create = (newDefaults) => createInstance((0,_utils_merge_js__WEBPACK_IMPORTED_MODULE_1__.validateAndMerge)(newDefaults));
-    ky.extend = (newDefaults) => createInstance((0,_utils_merge_js__WEBPACK_IMPORTED_MODULE_1__.validateAndMerge)(defaults, newDefaults));
-    ky.stop = _core_constants_js__WEBPACK_IMPORTED_MODULE_2__.stop;
-    return ky;
-};
-const ky = createInstance();
-/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (ky);
-
-
-//# sourceMappingURL=index.js.map
-
-/***/ }),
-/* 52 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "Ky": () => (/* binding */ Ky)
-/* harmony export */ });
-/* harmony import */ var _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(54);
-/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(58);
-/* harmony import */ var _utils_merge_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(55);
-/* harmony import */ var _utils_normalize_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(57);
-/* harmony import */ var _utils_timeout_js__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(61);
-/* harmony import */ var _utils_delay_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(59);
-/* harmony import */ var _constants_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(53);
-
-
-
-
-
-
-
-class Ky {
-    // eslint-disable-next-line @typescript-eslint/promise-function-async
-    static create(input, options) {
-        const ky = new Ky(input, options);
-        const fn = async () => {
-            if (ky._options.timeout > _constants_js__WEBPACK_IMPORTED_MODULE_0__.maxSafeTimeout) {
-                throw new RangeError(`The \`timeout\` option cannot be greater than ${_constants_js__WEBPACK_IMPORTED_MODULE_0__.maxSafeTimeout}`);
-            }
-            // Delay the fetch so that body method shortcuts can set the Accept header
-            await Promise.resolve();
-            let response = await ky._fetch();
-            for (const hook of ky._options.hooks.afterResponse) {
-                // eslint-disable-next-line no-await-in-loop
-                const modifiedResponse = await hook(ky.request, ky._options, ky._decorateResponse(response.clone()));
-                if (modifiedResponse instanceof globalThis.Response) {
-                    response = modifiedResponse;
-                }
-            }
-            ky._decorateResponse(response);
-            if (!response.ok && ky._options.throwHttpErrors) {
-                let error = new _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_1__.HTTPError(response, ky.request, ky._options);
-                for (const hook of ky._options.hooks.beforeError) {
-                    // eslint-disable-next-line no-await-in-loop
-                    error = await hook(error);
-                }
-                throw error;
-            }
-            // If `onDownloadProgress` is passed, it uses the stream API internally
-            /* istanbul ignore next */
-            if (ky._options.onDownloadProgress) {
-                if (typeof ky._options.onDownloadProgress !== 'function') {
-                    throw new TypeError('The `onDownloadProgress` option must be a function');
-                }
-                if (!_constants_js__WEBPACK_IMPORTED_MODULE_0__.supportsResponseStreams) {
-                    throw new Error('Streams are not supported in your environment. `ReadableStream` is missing.');
-                }
-                return ky._stream(response.clone(), ky._options.onDownloadProgress);
-            }
-            return response;
-        };
-        const isRetriableMethod = ky._options.retry.methods.includes(ky.request.method.toLowerCase());
-        const result = (isRetriableMethod ? ky._retry(fn) : fn());
-        for (const [type, mimeType] of Object.entries(_constants_js__WEBPACK_IMPORTED_MODULE_0__.responseTypes)) {
-            result[type] = async () => {
-                // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-                ky.request.headers.set('accept', ky.request.headers.get('accept') || mimeType);
-                const awaitedResult = await result;
-                const response = awaitedResult.clone();
-                if (type === 'json') {
-                    if (response.status === 204) {
-                        return '';
-                    }
-                    const arrayBuffer = await response.clone().arrayBuffer();
-                    const responseSize = arrayBuffer.byteLength;
-                    if (responseSize === 0) {
-                        return '';
-                    }
-                    if (options.parseJson) {
-                        return options.parseJson(await response.text());
-                    }
-                }
-                return response[type]();
-            };
-        }
-        return result;
-    }
-    // eslint-disable-next-line complexity
-    constructor(input, options = {}) {
-        Object.defineProperty(this, "request", {
-            enumerable: true,
-            configurable: true,
-            writable: true,
-            value: void 0
-        });
-        Object.defineProperty(this, "abortController", {
-            enumerable: true,
-            configurable: true,
-            writable: true,
-            value: void 0
-        });
-        Object.defineProperty(this, "_retryCount", {
-            enumerable: true,
-            configurable: true,
-            writable: true,
-            value: 0
-        });
-        Object.defineProperty(this, "_input", {
-            enumerable: true,
-            configurable: true,
-            writable: true,
-            value: void 0
-        });
-        Object.defineProperty(this, "_options", {
-            enumerable: true,
-            configurable: true,
-            writable: true,
-            value: void 0
-        });
-        this._input = input;
-        this._options = {
-            // TODO: credentials can be removed when the spec change is implemented in all browsers. Context: https://www.chromestatus.com/feature/4539473312350208
-            credentials: this._input.credentials || 'same-origin',
-            ...options,
-            headers: (0,_utils_merge_js__WEBPACK_IMPORTED_MODULE_2__.mergeHeaders)(this._input.headers, options.headers),
-            hooks: (0,_utils_merge_js__WEBPACK_IMPORTED_MODULE_2__.deepMerge)({
-                beforeRequest: [],
-                beforeRetry: [],
-                beforeError: [],
-                afterResponse: [],
-            }, options.hooks),
-            method: (0,_utils_normalize_js__WEBPACK_IMPORTED_MODULE_3__.normalizeRequestMethod)(options.method ?? this._input.method),
-            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-            prefixUrl: String(options.prefixUrl || ''),
-            retry: (0,_utils_normalize_js__WEBPACK_IMPORTED_MODULE_3__.normalizeRetryOptions)(options.retry),
-            throwHttpErrors: options.throwHttpErrors !== false,
-            timeout: typeof options.timeout === 'undefined' ? 10000 : options.timeout,
-            fetch: options.fetch ?? globalThis.fetch.bind(globalThis),
-        };
-        if (typeof this._input !== 'string' && !(this._input instanceof URL || this._input instanceof globalThis.Request)) {
-            throw new TypeError('`input` must be a string, URL, or Request');
-        }
-        if (this._options.prefixUrl && typeof this._input === 'string') {
-            if (this._input.startsWith('/')) {
-                throw new Error('`input` must not begin with a slash when using `prefixUrl`');
-            }
-            if (!this._options.prefixUrl.endsWith('/')) {
-                this._options.prefixUrl += '/';
-            }
-            this._input = this._options.prefixUrl + this._input;
-        }
-        if (_constants_js__WEBPACK_IMPORTED_MODULE_0__.supportsAbortController) {
-            this.abortController = new globalThis.AbortController();
-            if (this._options.signal) {
-                const originalSignal = this._options.signal;
-                this._options.signal.addEventListener('abort', () => {
-                    this.abortController.abort(originalSignal.reason);
-                });
-            }
-            this._options.signal = this.abortController.signal;
-        }
-        if (_constants_js__WEBPACK_IMPORTED_MODULE_0__.supportsRequestStreams) {
-            // @ts-expect-error - Types are outdated.
-            this._options.duplex = 'half';
-        }
-        this.request = new globalThis.Request(this._input, this._options);
-        if (this._options.searchParams) {
-            // eslint-disable-next-line unicorn/prevent-abbreviations
-            const textSearchParams = typeof this._options.searchParams === 'string'
-                ? this._options.searchParams.replace(/^\?/, '')
-                : new URLSearchParams(this._options.searchParams).toString();
-            // eslint-disable-next-line unicorn/prevent-abbreviations
-            const searchParams = '?' + textSearchParams;
-            const url = this.request.url.replace(/(?:\?.*?)?(?=#|$)/, searchParams);
-            // To provide correct form boundary, Content-Type header should be deleted each time when new Request instantiated from another one
-            if (((_constants_js__WEBPACK_IMPORTED_MODULE_0__.supportsFormData && this._options.body instanceof globalThis.FormData)
-                || this._options.body instanceof URLSearchParams) && !(this._options.headers && this._options.headers['content-type'])) {
-                this.request.headers.delete('content-type');
-            }
-            // The spread of `this.request` is required as otherwise it misses the `duplex` option for some reason and throws.
-            this.request = new globalThis.Request(new globalThis.Request(url, { ...this.request }), this._options);
-        }
-        if (this._options.json !== undefined) {
-            this._options.body = JSON.stringify(this._options.json);
-            this.request.headers.set('content-type', this._options.headers.get('content-type') ?? 'application/json');
-            this.request = new globalThis.Request(this.request, { body: this._options.body });
-        }
-    }
-    _calculateRetryDelay(error) {
-        this._retryCount++;
-        if (this._retryCount < this._options.retry.limit && !(error instanceof _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_4__.TimeoutError)) {
-            if (error instanceof _errors_HTTPError_js__WEBPACK_IMPORTED_MODULE_1__.HTTPError) {
-                if (!this._options.retry.statusCodes.includes(error.response.status)) {
-                    return 0;
-                }
-                const retryAfter = error.response.headers.get('Retry-After');
-                if (retryAfter && this._options.retry.afterStatusCodes.includes(error.response.status)) {
-                    let after = Number(retryAfter);
-                    if (Number.isNaN(after)) {
-                        after = Date.parse(retryAfter) - Date.now();
-                    }
-                    else {
-                        after *= 1000;
-                    }
-                    if (typeof this._options.retry.maxRetryAfter !== 'undefined' && after > this._options.retry.maxRetryAfter) {
-                        return 0;
-                    }
-                    return after;
-                }
-                if (error.response.status === 413) {
-                    return 0;
-                }
-            }
-            const BACKOFF_FACTOR = 0.3;
-            return Math.min(this._options.retry.backoffLimit, BACKOFF_FACTOR * (2 ** (this._retryCount - 1)) * 1000);
-        }
-        return 0;
-    }
-    _decorateResponse(response) {
-        if (this._options.parseJson) {
-            response.json = async () => this._options.parseJson(await response.text());
-        }
-        return response;
-    }
-    async _retry(fn) {
-        try {
-            return await fn();
-            // eslint-disable-next-line @typescript-eslint/no-implicit-any-catch
-        }
-        catch (error) {
-            const ms = Math.min(this._calculateRetryDelay(error), _constants_js__WEBPACK_IMPORTED_MODULE_0__.maxSafeTimeout);
-            if (ms !== 0 && this._retryCount > 0) {
-                await (0,_utils_delay_js__WEBPACK_IMPORTED_MODULE_5__["default"])(ms, { signal: this._options.signal });
-                for (const hook of this._options.hooks.beforeRetry) {
-                    // eslint-disable-next-line no-await-in-loop
-                    const hookResult = await hook({
-                        request: this.request,
-                        options: this._options,
-                        error: error,
-                        retryCount: this._retryCount,
-                    });
-                    // If `stop` is returned from the hook, the retry process is stopped
-                    if (hookResult === _constants_js__WEBPACK_IMPORTED_MODULE_0__.stop) {
-                        return;
-                    }
-                }
-                return this._retry(fn);
-            }
-            throw error;
-        }
-    }
-    async _fetch() {
-        for (const hook of this._options.hooks.beforeRequest) {
-            // eslint-disable-next-line no-await-in-loop
-            const result = await hook(this.request, this._options);
-            if (result instanceof Request) {
-                this.request = result;
-                break;
-            }
-            if (result instanceof Response) {
-                return result;
-            }
-        }
-        if (this._options.timeout === false) {
-            return this._options.fetch(this.request.clone());
-        }
-        return (0,_utils_timeout_js__WEBPACK_IMPORTED_MODULE_6__["default"])(this.request.clone(), this.abortController, this._options);
-    }
-    /* istanbul ignore next */
-    _stream(response, onDownloadProgress) {
-        const totalBytes = Number(response.headers.get('content-length')) || 0;
-        let transferredBytes = 0;
-        if (response.status === 204) {
-            if (onDownloadProgress) {
-                onDownloadProgress({ percent: 1, totalBytes, transferredBytes }, new Uint8Array());
-            }
-            return new globalThis.Response(null, {
-                status: response.status,
-                statusText: response.statusText,
-                headers: response.headers,
-            });
-        }
-        return new globalThis.Response(new globalThis.ReadableStream({
-            async start(controller) {
-                const reader = response.body.getReader();
-                if (onDownloadProgress) {
-                    onDownloadProgress({ percent: 0, transferredBytes: 0, totalBytes }, new Uint8Array());
-                }
-                async function read() {
-                    const { done, value } = await reader.read();
-                    if (done) {
-                        controller.close();
-                        return;
-                    }
-                    if (onDownloadProgress) {
-                        transferredBytes += value.byteLength;
-                        const percent = totalBytes === 0 ? 0 : transferredBytes / totalBytes;
-                        onDownloadProgress({ percent, transferredBytes, totalBytes }, value);
-                    }
-                    controller.enqueue(value);
-                    await read();
-                }
-                await read();
-            },
-        }), {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-        });
-    }
-}
-//# sourceMappingURL=Ky.js.map
-
-/***/ }),
-/* 53 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "maxSafeTimeout": () => (/* binding */ maxSafeTimeout),
-/* harmony export */   "requestMethods": () => (/* binding */ requestMethods),
-/* harmony export */   "responseTypes": () => (/* binding */ responseTypes),
-/* harmony export */   "stop": () => (/* binding */ stop),
-/* harmony export */   "supportsAbortController": () => (/* binding */ supportsAbortController),
-/* harmony export */   "supportsFormData": () => (/* binding */ supportsFormData),
-/* harmony export */   "supportsRequestStreams": () => (/* binding */ supportsRequestStreams),
-/* harmony export */   "supportsResponseStreams": () => (/* binding */ supportsResponseStreams)
-/* harmony export */ });
-const supportsRequestStreams = (() => {
-    let duplexAccessed = false;
-    let hasContentType = false;
-    const supportsReadableStream = typeof globalThis.ReadableStream === 'function';
-    const supportsRequest = typeof globalThis.Request === 'function';
-    if (supportsReadableStream && supportsRequest) {
-        hasContentType = new globalThis.Request('https://a.com', {
-            body: new globalThis.ReadableStream(),
-            method: 'POST',
-            // @ts-expect-error - Types are outdated.
-            get duplex() {
-                duplexAccessed = true;
-                return 'half';
-            },
-        }).headers.has('Content-Type');
-    }
-    return duplexAccessed && !hasContentType;
-})();
-const supportsAbortController = typeof globalThis.AbortController === 'function';
-const supportsResponseStreams = typeof globalThis.ReadableStream === 'function';
-const supportsFormData = typeof globalThis.FormData === 'function';
-const requestMethods = ['get', 'post', 'put', 'patch', 'head', 'delete'];
-const validate = () => undefined;
-validate();
-const responseTypes = {
-    json: 'application/json',
-    text: 'text/*',
-    formData: 'multipart/form-data',
-    arrayBuffer: '*/*',
-    blob: '*/*',
-};
-// The maximum value of a 32bit int (see issue #117)
-const maxSafeTimeout = 2147483647;
-const stop = Symbol('stop');
-//# sourceMappingURL=constants.js.map
-
-/***/ }),
-/* 54 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "HTTPError": () => (/* binding */ HTTPError)
-/* harmony export */ });
-// eslint-lint-disable-next-line @typescript-eslint/naming-convention
-class HTTPError extends Error {
-    constructor(response, request, options) {
-        const code = (response.status || response.status === 0) ? response.status : '';
-        const title = response.statusText || '';
-        const status = `${code} ${title}`.trim();
-        const reason = status ? `status code ${status}` : 'an unknown error';
-        super(`Request failed with ${reason}`);
-        Object.defineProperty(this, "response", {
-            enumerable: true,
-            configurable: true,
-            writable: true,
-            value: void 0
-        });
-        Object.defineProperty(this, "request", {
-            enumerable: true,
-            configurable: true,
-            writable: true,
-            value: void 0
-        });
-        Object.defineProperty(this, "options", {
-            enumerable: true,
-            configurable: true,
-            writable: true,
-            value: void 0
-        });
-        this.name = 'HTTPError';
-        this.response = response;
-        this.request = request;
-        this.options = options;
-    }
-}
-//# sourceMappingURL=HTTPError.js.map
-
-/***/ }),
-/* 55 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "deepMerge": () => (/* binding */ deepMerge),
-/* harmony export */   "mergeHeaders": () => (/* binding */ mergeHeaders),
-/* harmony export */   "validateAndMerge": () => (/* binding */ validateAndMerge)
-/* harmony export */ });
-/* harmony import */ var _is_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(56);
-
-const validateAndMerge = (...sources) => {
-    for (const source of sources) {
-        if ((!(0,_is_js__WEBPACK_IMPORTED_MODULE_0__.isObject)(source) || Array.isArray(source)) && typeof source !== 'undefined') {
-            throw new TypeError('The `options` argument must be an object');
-        }
-    }
-    return deepMerge({}, ...sources);
-};
-const mergeHeaders = (source1 = {}, source2 = {}) => {
-    const result = new globalThis.Headers(source1);
-    const isHeadersInstance = source2 instanceof globalThis.Headers;
-    const source = new globalThis.Headers(source2);
-    for (const [key, value] of source.entries()) {
-        if ((isHeadersInstance && value === 'undefined') || value === undefined) {
-            result.delete(key);
-        }
-        else {
-            result.set(key, value);
-        }
-    }
-    return result;
-};
-// TODO: Make this strongly-typed (no `any`).
-const deepMerge = (...sources) => {
-    let returnValue = {};
-    let headers = {};
-    for (const source of sources) {
-        if (Array.isArray(source)) {
-            if (!Array.isArray(returnValue)) {
-                returnValue = [];
-            }
-            returnValue = [...returnValue, ...source];
-        }
-        else if ((0,_is_js__WEBPACK_IMPORTED_MODULE_0__.isObject)(source)) {
-            for (let [key, value] of Object.entries(source)) {
-                if ((0,_is_js__WEBPACK_IMPORTED_MODULE_0__.isObject)(value) && key in returnValue) {
-                    value = deepMerge(returnValue[key], value);
-                }
-                returnValue = { ...returnValue, [key]: value };
-            }
-            if ((0,_is_js__WEBPACK_IMPORTED_MODULE_0__.isObject)(source.headers)) {
-                headers = mergeHeaders(headers, source.headers);
-                returnValue.headers = headers;
-            }
-        }
-    }
-    return returnValue;
-};
-//# sourceMappingURL=merge.js.map
-
-/***/ }),
-/* 56 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "isObject": () => (/* binding */ isObject)
-/* harmony export */ });
-// eslint-disable-next-line @typescript-eslint/ban-types
-const isObject = (value) => value !== null && typeof value === 'object';
-//# sourceMappingURL=is.js.map
-
-/***/ }),
-/* 57 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "normalizeRequestMethod": () => (/* binding */ normalizeRequestMethod),
-/* harmony export */   "normalizeRetryOptions": () => (/* binding */ normalizeRetryOptions)
-/* harmony export */ });
-/* harmony import */ var _core_constants_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(53);
-
-const normalizeRequestMethod = (input) => _core_constants_js__WEBPACK_IMPORTED_MODULE_0__.requestMethods.includes(input) ? input.toUpperCase() : input;
-const retryMethods = ['get', 'put', 'head', 'delete', 'options', 'trace'];
-const retryStatusCodes = [408, 413, 429, 500, 502, 503, 504];
-const retryAfterStatusCodes = [413, 429, 503];
-const defaultRetryOptions = {
-    limit: 2,
-    methods: retryMethods,
-    statusCodes: retryStatusCodes,
-    afterStatusCodes: retryAfterStatusCodes,
-    maxRetryAfter: Number.POSITIVE_INFINITY,
-    backoffLimit: Number.POSITIVE_INFINITY,
-};
-const normalizeRetryOptions = (retry = {}) => {
-    if (typeof retry === 'number') {
-        return {
-            ...defaultRetryOptions,
-            limit: retry,
-        };
-    }
-    if (retry.methods && !Array.isArray(retry.methods)) {
-        throw new Error('retry.methods must be an array');
-    }
-    if (retry.statusCodes && !Array.isArray(retry.statusCodes)) {
-        throw new Error('retry.statusCodes must be an array');
-    }
-    return {
-        ...defaultRetryOptions,
-        ...retry,
-        afterStatusCodes: retryAfterStatusCodes,
-    };
-};
-//# sourceMappingURL=normalize.js.map
-
-/***/ }),
-/* 58 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "TimeoutError": () => (/* binding */ TimeoutError)
-/* harmony export */ });
-class TimeoutError extends Error {
-    constructor(request) {
-        super('Request timed out');
-        Object.defineProperty(this, "request", {
-            enumerable: true,
-            configurable: true,
-            writable: true,
-            value: void 0
-        });
-        this.name = 'TimeoutError';
-        this.request = request;
-    }
-}
-//# sourceMappingURL=TimeoutError.js.map
-
-/***/ }),
-/* 59 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "default": () => (/* binding */ delay)
-/* harmony export */ });
-/* harmony import */ var _errors_DOMException_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(60);
-// https://github.com/sindresorhus/delay/tree/ab98ae8dfcb38e1593286c94d934e70d14a4e111
-
-async function delay(ms, { signal }) {
-    return new Promise((resolve, reject) => {
-        if (signal) {
-            if (signal.aborted) {
-                reject((0,_errors_DOMException_js__WEBPACK_IMPORTED_MODULE_0__.composeAbortError)(signal));
-                return;
-            }
-            signal.addEventListener('abort', handleAbort, { once: true });
-        }
-        function handleAbort() {
-            reject((0,_errors_DOMException_js__WEBPACK_IMPORTED_MODULE_0__.composeAbortError)(signal));
-            clearTimeout(timeoutId);
-        }
-        const timeoutId = setTimeout(() => {
-            signal?.removeEventListener('abort', handleAbort);
-            resolve();
-        }, ms);
-    });
-}
-//# sourceMappingURL=delay.js.map
-
-/***/ }),
-/* 60 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "composeAbortError": () => (/* binding */ composeAbortError)
-/* harmony export */ });
-// DOMException is supported on most modern browsers and Node.js 18+.
-// @see https://developer.mozilla.org/en-US/docs/Web/API/DOMException#browser_compatibility
-const isDomExceptionSupported = Boolean(globalThis.DOMException);
-// TODO: When targeting Node.js 18, use `signal.throwIfAborted()` (https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/throwIfAborted)
-function composeAbortError(signal) {
-    /*
-    NOTE: Use DomException with AbortError name as specified in MDN docs (https://developer.mozilla.org/en-US/docs/Web/API/AbortController/abort)
-    > When abort() is called, the fetch() promise rejects with an Error of type DOMException, with name AbortError.
-    */
-    if (isDomExceptionSupported) {
-        return new DOMException(signal?.reason ?? 'The operation was aborted.', 'AbortError');
-    }
-    // DOMException not supported. Fall back to use of error and override name.
-    const error = new Error(signal?.reason ?? 'The operation was aborted.');
-    error.name = 'AbortError';
-    return error;
-}
-//# sourceMappingURL=DOMException.js.map
-
-/***/ }),
-/* 61 */
-/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "default": () => (/* binding */ timeout)
-/* harmony export */ });
-/* harmony import */ var _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(58);
-
-// `Promise.race()` workaround (#91)
-async function timeout(request, abortController, options) {
-    return new Promise((resolve, reject) => {
-        const timeoutId = setTimeout(() => {
-            if (abortController) {
-                abortController.abort();
-            }
-            reject(new _errors_TimeoutError_js__WEBPACK_IMPORTED_MODULE_0__.TimeoutError(request));
-        }, options.timeout);
-        void options
-            .fetch(request)
-            .then(resolve)
-            .catch(reject)
-            .then(() => {
-            clearTimeout(timeoutId);
-        });
-    });
-}
-//# sourceMappingURL=timeout.js.map
-
 /***/ })
 /******/ 	]);
 /************************************************************************/
@@ -6660,20 +5975,16 @@ var __webpack_exports__ = {};
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
-/* harmony import */ var cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(41);
-/* harmony import */ var ky__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(51);
-/* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(20);
-/* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(_cozy_minilog__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var p_wait_for__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(18);
-/* harmony import */ var p_retry__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(46);
+/* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(20);
+/* harmony import */ var _cozy_minilog__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(_cozy_minilog__WEBPACK_IMPORTED_MODULE_1__);
+/* harmony import */ var p_wait_for__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(18);
+/* harmony import */ var p_retry__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(46);
 
 
 
 
-
-
-const log = _cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default()('ContentScript')
-_cozy_minilog__WEBPACK_IMPORTED_MODULE_2___default().enable('sfrCCC')
+const log = _cozy_minilog__WEBPACK_IMPORTED_MODULE_1___default()('ContentScript')
+_cozy_minilog__WEBPACK_IMPORTED_MODULE_1___default().enable('sfrCCC')
 
 const BASE_CLIENT_URL = 'https://espace-client.sfr.fr'
 const CLIENT_SPACE_URL = 'https://www.sfr.fr/mon-espace-client/'
@@ -6691,7 +6002,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
     // we always force logout to avoid conflicts with red accounts
-    await (0,p_retry__WEBPACK_IMPORTED_MODULE_4__["default"])(this.ensureNotAuthenticated.bind(this), {
+    await (0,p_retry__WEBPACK_IMPORTED_MODULE_3__["default"])(this.ensureNotAuthenticated.bind(this), {
       retries: 3,
       onFailedAttempt: error => {
         this.log(
@@ -6703,33 +6014,28 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     await this.waitForUserAuthentication()
   }
 
-  async waitForCurrentContract(contract) {
-    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_3__["default"])(
-      async () => {
-        const el = document.querySelector(`li[id='${contract.id}']`)
-        if (el) {
-          el.click()
-          return false
-        } else {
-          const currentContract = await this.getCurrentContract()
-          if (!currentContract) {
-            return false
-          }
-          const result = currentContract.text === contract.text
-          return result
-        }
-      },
-      {
-        interval: 1000,
-        timeout: {
-          milliseconds: 10000,
-          message: new p_wait_for__WEBPACK_IMPORTED_MODULE_3__.TimeoutError(
-            'waitForCurrentContract ' + contract.text + ' timed out after 10sec'
-          )
-        }
-      }
+  async navigateToNextContract(contract) {
+    this.log(
+      'info',
+      `📍️ navigateToNextContract starts for ${JSON.stringify(contract.text)}`
     )
-    return true
+    // Removing elements here is to ensure we're not finding the awaited elements
+    // before the next contract is loaded
+    if (await this.isElementInWorker('#plusFac')) {
+      await this.evaluateInWorker(function removeElement() {
+        document.querySelector('#lastFacture').remove()
+      })
+    } else {
+      await this.evaluateInWorker(function removeElement() {
+        document.querySelector('div[class="sr-inline sr-xs-block "]').remove()
+      })
+    }
+    await this.runInWorker('click', `li[id='${contract.id}']`)
+    await Promise.race([
+      this.waitForElementInWorker('div[class="sr-inline sr-xs-block"]'),
+      this.waitForElementInWorker('div[class="sr-inline sr-xs-block "]'),
+      this.waitForElementInWorker('#lastFacture')
+    ])
   }
 
   async ensureRedNotAuthenticated() {
@@ -6844,32 +6150,41 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
       `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`
     )
     const contracts = await this.runInWorker('getContracts')
+    let isFirstContract = true
+    await this.goto(CLIENT_SPACE_URL)
+    await this.waitForElementInWorker(
+      `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`
+    )
     for (const contract of contracts) {
       const contractName = contract.text
-      await this.goto(CLIENT_SPACE_URL)
-      await this.waitForElementInWorker(
-        `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`
-      )
-      // first contract is the current one
-      await this.goto('https://www.sfr.fr/routage/info-conso')
-      await this.waitForElementInWorker('.sr-tabs')
       if (contract.id !== 'current') {
-        await this.runInWorkerUntilTrue({
-          method: 'waitForCurrentContract',
-          args: [contract]
-        })
+        await this.navigateToNextContract(contract)
       }
-      await this.fetchCurrentContractBills(contractName, context)
+      await this.fetchCurrentContractBills(
+        contractName,
+        context,
+        isFirstContract
+      )
+      isFirstContract = false
     }
   }
 
-  async fetchCurrentContractBills(contractName, context) {
+  async fetchCurrentContractBills(contractName, context, isFirst) {
     this.log('info', '🤖 Fetching current contract: ' + contractName)
-    await this.goto(BASE_CLIENT_URL + BILLS_URL_PATH)
-    await this.waitForElementInWorker(
+    if (isFirst) {
+      await this.goto(BASE_CLIENT_URL + BILLS_URL_PATH)
+    }
+    await Promise.race([
+      this.waitForElementInWorker('#blocAjax'),
+      this.waitForElementInWorker('#historique')
+    ])
+    const altButton = await this.isElementInWorker('#plusFac')
+    const normalButton = await this.isElementInWorker(
       'button[onclick="plusFacture(); return false;"]'
     )
-    await this.runInWorker('getMoreBills')
+    if (altButton || normalButton) {
+      await this.runInWorker('getMoreBills')
+    }
     await this.runInWorker('getBills', contractName)
     await this.saveBills(this.store.allBills, {
       context,
@@ -6917,11 +6232,12 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   }
 
   async waitForRedUrl() {
-    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_3__["default"])(this.isRedUrl, {
+    this.log('info', '📍️ waitForRedUrl starts')
+    await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_2__["default"])(this.isRedUrl, {
       interval: 100,
       timeout: {
         milliseconds: 10000,
-        message: new p_wait_for__WEBPACK_IMPORTED_MODULE_3__.TimeoutError('waitForRedUrl timed out after 10sec')
+        message: new p_wait_for__WEBPACK_IMPORTED_MODULE_2__.TimeoutError('waitForRedUrl timed out after 10sec')
       }
     })
     return true
@@ -6969,6 +6285,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   }
 
   async getUserMail() {
+    this.log('info', '📍️ getUserMail starts')
     const userMailElement = document.querySelector('#emailContact').innerHTML
     if (userMailElement) {
       return userMailElement
@@ -6998,14 +6315,14 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     const addressWords = unspacedAddress.match(/([A-Z ]{1,})/g)
     const street = addressWords[0].replace(/^ +/g, '').replace(/ +$/g, '')
     const city = addressWords[1].replace(/^ +/g, '').replace(/ +$/g, '')
-    const mobilePhoneNumber = document.querySelector(
-      '#telephoneContactMobile'
-    ).innerHTML
+    const mobilePhoneNumber = document
+      .querySelector('#telephoneContactMobile')
+      .innerHTML.trim()
     let homePhoneNumber = null
     if (document.querySelector('#telephoneContactFixe')) {
-      homePhoneNumber = document.querySelector(
-        '#telephoneContactFixe'
-      ).innerHTML
+      homePhoneNumber = document
+        .querySelector('#telephoneContactFixe')
+        .innerHTML.trim()
     }
     const email = document.querySelector('#emailContact').innerHTML
     const userIdentity = {
@@ -7041,6 +6358,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   }
 
   async getContracts() {
+    this.log('info', '📍️ getContracts starts')
     const contracts = Array.from(
       document
         .querySelector(
@@ -7049,14 +6367,25 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
         .parentNode.parentNode.querySelectorAll('li')
     )
       .filter(el => !el.getAttribute('class'))
-      .map(el => ({
-        id: el.getAttribute('id') || 'current',
-        text: el.innerHTML.trim()
-      }))
+      .map(el => {
+        const text = el.innerHTML.trim()
+        let type
+        if (text.startsWith('06') || text.startsWith('07')) {
+          type = 'mobile'
+        } else {
+          type = 'fixe'
+        }
+        return {
+          id: el.getAttribute('id') || 'current',
+          text,
+          type
+        }
+      })
     return contracts
   }
 
   async getCurrentContract() {
+    this.log('info', '📍️ getCurrentContract starts')
     try {
       const contracts = await this.getContracts()
       const currentContract = contracts.find(
@@ -7073,23 +6402,57 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   }
 
   async getMoreBills() {
+    this.log('info', '📍️ getMoreBills starts')
     const moreBillsSelector = 'button[onclick="plusFacture(); return false;"]'
-    while (document.querySelector(`${moreBillsSelector}`) !== null) {
-      this.log('debug', 'moreBillsButton detected, clicking')
-      const moreBillsButton = document.querySelector(`${moreBillsSelector}`)
-      moreBillsButton.click()
-      // Here, we need to wait for the older bills to load on the page
-      await sleep(3)
+    const moreBillAltWrapperSelector = '#plusFacWrap'
+    const moreBillAltSelector = '#plusFac'
+    if (document.querySelector(moreBillsSelector)) {
+      while (document.querySelector(`${moreBillsSelector}`) !== null) {
+        this.log('debug', 'moreBillsButton detected, clicking')
+        const moreBillsButton = document.querySelector(`${moreBillsSelector}`)
+        moreBillsButton.click()
+        // Here, we need to wait for the older bills to load on the page
+        await sleep(3)
+      }
+    }
+    if (
+      document.querySelector(moreBillAltSelector) &&
+      document.querySelector(moreBillAltWrapperSelector)
+    ) {
+      while (
+        !document
+          .querySelector(`${moreBillAltWrapperSelector}`)
+          .getAttribute('style')
+      ) {
+        this.log('debug', 'moreBillsButton detected, clicking')
+        const moreBillsButton = document.querySelector(`${moreBillAltSelector}`)
+        moreBillsButton.click()
+        // Here, we need to wait for the older bills to load on the page
+        await sleep(3)
+      }
     }
     this.log('debug', 'No more moreBills button')
   }
 
   async getBills(contractName) {
-    const lastBill = await this.findLastBill(contractName)
-    this.log('debug', 'Last bill returned, getting old ones')
-    const oldBills = await this.findOldBills(contractName)
-    const allBills = lastBill.concat(oldBills)
-    this.log('debug', 'Old bills returned, sending to Pilot')
+    this.log('info', '📍️ getBills starts')
+    let lastBill
+    let allBills
+    // Selector of the alternative lastBill element
+    if (document.querySelector('#lastFacture')) {
+      lastBill = await this.findAltLastBill(contractName)
+      this.log('debug', 'Last bill returned, getting old ones')
+      const oldBills = await this.findAltOldBills(contractName)
+      allBills = lastBill.concat(oldBills)
+      this.log('debug', 'Old bills returned, sending to Pilot')
+    } else {
+      lastBill = await this.findLastBill(contractName)
+      this.log('debug', 'Last bill returned, getting old ones')
+      const oldBills = await this.findOldBills(contractName)
+      allBills = lastBill.concat(oldBills)
+      this.log('debug', 'Old bills returned, sending to Pilot')
+    }
+
     await this.sendToPilot({
       allBills
     })
@@ -7097,11 +6460,22 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   }
 
   async findLastBill(contractName) {
-    this.log('debug', 'findLastBill starts')
+    this.log('info', '📍️ findLastBill starts')
     let lastBill = []
     const lastBillElement = document.querySelector(
       'div[class="sr-inline sr-xs-block "]'
     )
+    this.log(
+      'info',
+      `lastBillElement : ${JSON.stringify(Boolean(lastBillElement))}`
+    )
+    if (lastBillElement.innerHTML.includes('à partir du')) {
+      this.log(
+        'info',
+        'This bill has no dates to fetch yet, fetching it when dates has been given'
+      )
+      return []
+    }
     const rawAmount = lastBillElement
       .querySelectorAll('div')[0]
       .querySelector('span').innerHTML
@@ -7109,6 +6483,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
       .replace(/&nbsp;/g, '')
       .replace(/ /g, '')
       .replace(/\n/g, '')
+
     const amount = parseFloat(fullAmount.replace('€', ''))
     const currency = fullAmount.replace(/[0-9]*/g, '')
     const rawDate = lastBillElement
@@ -7118,7 +6493,6 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     const day = dateArray[0]
     const month = dateArray[1]
     const year = dateArray[2]
-    const date = `${day}-${month}-${year}`
     const rawPaymentDate = lastBillElement
       .querySelectorAll('div')[1]
       .querySelectorAll('span')[0].innerHTML
@@ -7127,8 +6501,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     const paymentMonth = paymentArray[1]
     const paymentYear = paymentArray[2]
     const filepath = lastBillElement
-      .querySelectorAll('div')[3]
-      .querySelector('a')
+      .querySelector('#lien-telecharger-pdf')
       .getAttribute('href')
     const fileurl = `${BASE_CLIENT_URL}${filepath}`
     const computedLastBill = {
@@ -7136,7 +6509,8 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
       currency: currency === '€' ? 'EUR' : currency,
       date: new Date(`${month}/${day}/${year}`),
       paymentDate: new Date(`${paymentMonth}/${paymentDay}/${paymentYear}`),
-      filename: await getFileName(rawDate, amount, currency),
+      filename: await getFileName(`${year}/${month}/${day}`, amount, currency),
+      fileurl,
       vendor: 'sfr',
       subPath: contractName,
       fileAttributes: {
@@ -7150,38 +6524,92 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
         }
       }
     }
-    if (lastBillElement.children[2].querySelectorAll('a')[1] !== undefined) {
-      const detailedFilepath = lastBillElement.children[2]
-        .querySelectorAll('a')[1]
+    if (
+      lastBillElement.querySelectorAll('[id*="lien-telecharger-"]').length > 1
+    ) {
+      const detailedFilepath = lastBillElement
+        .querySelector('[id*="lien-telecharger-fadet"]')
         .getAttribute('href')
       const detailed = detailedFilepath.match('detail') ? true : false
       const detailedBill = {
         ...computedLastBill
       }
       detailedBill.filename = await getFileName(
-        date,
+        `${year}/${month}/${day}`,
         amount,
         currency,
         detailed
       )
-      const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
-      const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
-      const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
-      detailedBill.dataUri = dataUri
+      detailedBill.fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
       lastBill.push(detailedBill)
     }
-    // As it's impossible to have the pilot on the same domain as the worker
-    // to match domain's specific cookie for the download to be done by saveFiles
-    // we need to fetch the stream then pass it to the pilot
-    const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
-    const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
-    computedLastBill.dataUri = dataUri
+    lastBill.push(computedLastBill)
+    return lastBill
+  }
+
+  async findAltLastBill(contractName) {
+    this.log('info', '📍️ findAltLastBill starts')
+    let lastBill = []
+    const lastBillElement = document.querySelector(
+      'div[class="sr-inline sr-xs-block"]'
+    )
+    const rawAmount = lastBillElement
+      .querySelectorAll('div')[0]
+      .querySelector('span').innerHTML
+    const fullAmount = rawAmount
+      .replace(/&nbsp;/g, '')
+      .replace(/ /g, '')
+      .replace(/\n/g, '')
+    const amount = parseFloat(fullAmount.replace('€', '').replace(',', '.'))
+    const currency = fullAmount.replace(/[0-9]*/g, '').replace(',', '')
+    const rawDate = lastBillElement
+      .querySelectorAll('div')[1]
+      .querySelectorAll('div')[1].innerHTML
+
+    const dateArray = rawDate.split('/')
+    const day = dateArray[0].split('du')[1].trim()
+    const month = dateArray[1].trim()
+    const year = dateArray[2].trim()
+    const filepath = lastBillElement.querySelector('a').getAttribute('href')
+    const fileurl = `${BASE_CLIENT_URL}${filepath}`
+    const computedLastBill = {
+      amount,
+      currency: currency === '€' ? 'EUR' : currency,
+      date: new Date(`${month}/${day}/${year}`),
+      filename: await getFileName(`${year}-${month}-${day}`, amount, currency),
+      fileurl,
+      vendor: 'sfr',
+      subPath: contractName,
+      fileAttributes: {
+        metadata: {
+          contentAuthor: 'sfr',
+          datetime: new Date(`${month}/${day}/${year}`),
+          datetimeLabel: 'issueDate',
+          isSubscription: true,
+          issueDate: new Date(`${month}/${day}/${year}`),
+          carbonCopy: true
+        }
+      }
+    }
+    if (amount !== 0) {
+      const rawPaymentDate = lastBillElement
+        .querySelectorAll('div')[1]
+        .querySelectorAll('div')[0].innerHTML
+      const paymentArray = rawPaymentDate.split('/')
+      const paymentDay = paymentArray[0]
+      const paymentMonth = paymentArray[1]
+      const paymentYear = paymentArray[2]
+      const paymentDate = new Date(
+        `${paymentMonth}/${paymentDay}/${paymentYear}`
+      )
+      computedLastBill.paymentDate = paymentDate
+    }
     lastBill.push(computedLastBill)
     return lastBill
   }
 
   async findOldBills(contractName) {
-    this.log('debug', 'findOldBills starts')
+    this.log('info', '📍️ findOldBill starts')
     let oldBills = []
     const allBillsElements = document
       .querySelector('#blocAjax')
@@ -7190,7 +6618,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     for (const oneBill of allBillsElements) {
       this.log(
         'debug',
-        `fetching bill ${counter++}/${allBillsElements.length}...`
+        `fetching bill ${counter + 1}/${allBillsElements.length}...`
       )
       const rawAmount = oneBill.children[0].querySelector('span').innerHTML
       const fullAmount = rawAmount
@@ -7204,13 +6632,12 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
       const day = dateArray[0]
       const month = computeMonth(dateArray[1])
       const year = dateArray[2]
-      const date = `${day}-${month}-${year}`
       const rawPaymentDate = oneBill.children[1].innerHTML
         .replace(/\n/g, '')
         .replace(/ /g, '')
         .match(/([0-9]{2}[a-zûé]{3,4}.?-)/g)
-      const filepath = oneBill.children[4]
-        .querySelector('a')
+      const filepath = oneBill
+        .querySelector('[id*="lien-duplicata-pdf-"]')
         .getAttribute('href')
       const fileurl = `${BASE_CLIENT_URL}${filepath}`
 
@@ -7218,7 +6645,12 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
         amount,
         currency: currency === '€' ? 'EUR' : currency,
         date: new Date(`${month}/${day}/${year}`),
-        filename: await getFileName(date, amount, currency),
+        filename: await getFileName(
+          `${year}/${month}/${day}`,
+          amount,
+          currency
+        ),
+        fileurl,
         vendor: 'sfr',
         subPath: contractName,
         fileAttributes: {
@@ -7246,36 +6678,150 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
           `${paymentMonth}/${paymentDay}/${paymentYear}`
         )
       }
-      if (oneBill.children[4].querySelectorAll('a')[1] !== undefined) {
-        const detailedFilepath = oneBill.children[4]
-          .querySelectorAll('a')[1]
+      if (oneBill.querySelectorAll('[id*="lien-"]').length > 1) {
+        const detailedFilepath = oneBill
+          .querySelector('[id*="lien-telecharger-fadet"]')
           .getAttribute('href')
+        this.log(
+          'info',
+          `detailedFilePath : ${JSON.stringify(detailedFilepath)}`
+        )
         const detailed = detailedFilepath.match('detail') ? true : false
         const detailedBill = {
           ...computedBill
         }
         detailedBill.filename = await getFileName(
-          date,
+          `${year}/${month}/${day}`,
           amount,
           currency,
           detailed
         )
-        const fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
-        const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
-        const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
-        detailedBill.dataUri = dataUri
+        detailedBill.fileurl = `${BASE_CLIENT_URL}${detailedFilepath}`
         oldBills.push(detailedBill)
       }
-      const response = await ky__WEBPACK_IMPORTED_MODULE_5__["default"].get(fileurl).blob()
-      const dataUri = await (0,cozy_clisk_dist_contentscript_utils__WEBPACK_IMPORTED_MODULE_1__.blobToBase64)(response)
-      computedBill.dataUri = dataUri
       oldBills.push(computedBill)
+      counter++
+    }
+    this.log('debug', 'Old bills fetched')
+    return oldBills
+  }
+
+  async findAltOldBills(contractName) {
+    this.log('info', '📍️ findAltOldBill starts')
+    let oldBills = []
+    const allBillsElements = document
+      .querySelector('#historique')
+      .querySelectorAll('.sr-container-content-line')
+    let counter = 0
+    for (const oneBill of allBillsElements) {
+      this.log(
+        'info',
+        `fetching bill ${counter + 1}/${allBillsElements.length}...`
+      )
+      const rawAmount = oneBill.children[0].querySelector('span').innerHTML
+      const fullAmount = rawAmount
+        .replace(/&nbsp;/g, '')
+        .replace(/ /g, '')
+        .replace(/\n/g, '')
+      const amount = parseFloat(fullAmount.replace('€', '').replace(',', '.'))
+      const currency = fullAmount.replace(/[0-9]*/g, '').replace(',', '')
+      const datesElements = Array.from(oneBill.children).filter(
+        element => element.tagName === 'SPAN'
+      )
+      const filepath = oneBill.querySelector('a').getAttribute('href')
+      const fileurl = `${BASE_CLIENT_URL}${filepath}`
+      let computedBill = {
+        amount,
+        currency: currency === '€' ? 'EUR' : currency,
+        vendor: 'sfr',
+        fileurl,
+        subPath: contractName,
+        fileAttributes: {
+          metadata: {
+            contentAuthor: 'sfr',
+            datetimeLabel: 'issueDate',
+            isSubscription: true,
+            issueDate: new Date(),
+            carbonCopy: true
+          }
+        }
+      }
+
+      if (datesElements.length >= 2) {
+        this.log('info', 'Found a payment date')
+        const rawPaymentDate =
+          datesElements[0].innerHTML.match(/\d{2}\/\d{2}\/\d{4}/g)[0]
+        const foundDate = rawPaymentDate.replace(/\//g, '-').trim()
+        const [paymentDay, paymentMonth, paymentYear] = foundDate.split('-')
+        const paymentDate = new Date(
+          `${paymentMonth}/${paymentDay}/${paymentYear}`
+        )
+        const innerhtmlIssueDate = datesElements[1].innerHTML
+        const foundIssueDate = innerhtmlIssueDate.split('-')[1].trim()
+        const [issueDay, issueMonth, issueYear] = foundIssueDate.split(/\//g)
+        const issueDate = new Date(`${issueMonth}/${issueDay}/${issueYear}`)
+        computedBill.paymentDate = paymentDate
+        computedBill.date = issueDate
+        computedBill.fileAttributes.metadata.datetime = issueDate
+        computedBill.filename = await getFileName(
+          `${issueYear}-${issueMonth}-${issueDay}`,
+          amount,
+          currency
+        )
+      } else {
+        this.log('info', 'Only one element present')
+        const elementInnerhtml = datesElements[0].innerHTML
+        if (elementInnerhtml.includes('Payé le')) {
+          const [innerhtmlPaymentDate, innerhtmlIssueDate] =
+            elementInnerhtml.split('- </span>')
+
+          const foundPaymentDate = innerhtmlPaymentDate
+            .split('le')[1]
+            .replace('</span>', '')
+            .trim()
+          const [paymentDay, paymentMonth, paymentYear] =
+            foundPaymentDate.split('/')
+          const paymentDate = new Date(
+            `${paymentMonth}/${paymentDay}/${paymentYear}`
+          )
+
+          const foundIssueDate = innerhtmlIssueDate
+            .split('mensuelle -')[1]
+            .replace('</span>', '')
+            .trim()
+          const [issueDay, issueMonth, issueYear] = foundIssueDate.split(/\//g)
+          const issueDate = new Date(`${issueMonth}/${issueDay}/${issueYear}`)
+          computedBill.paymentDate = paymentDate
+          computedBill.date = issueDate
+          computedBill.fileAttributes.metadata.datetime = issueDate
+          computedBill.filename = await getFileName(
+            `${issueYear}-${issueMonth}-${issueDay}`,
+            amount,
+            currency
+          )
+        } else {
+          this.log('info', 'Element does not includes "payé le"')
+          const foundIssueDate = elementInnerhtml.split('-')[1].trim()
+          const [issueDay, issueMonth, issueYear] = foundIssueDate.split(/\//g)
+          const issueDate = new Date(`${issueMonth}/${issueDay}/${issueYear}`)
+          computedBill.date = issueDate
+          computedBill.fileAttributes.metadata.datetime = issueDate
+          computedBill.filename = await getFileName(
+            `${issueYear}-${issueMonth}-${issueDay}`,
+            amount,
+            currency
+          )
+        }
+      }
+      oldBills.push(computedBill)
+      counter++
     }
     this.log('debug', 'Old bills fetched')
     return oldBills
   }
 
   async getReloginPage() {
+    this.log('info', '📍️ getReloginPage starts')
     if (document.querySelector('#password')) {
       return true
     }
@@ -7293,7 +6839,6 @@ connector
       'getReloginPage',
       'getUserIdentity',
       'getContracts',
-      'waitForCurrentContract',
       'waitForRedUrl',
       'isRedUrl'
     ]

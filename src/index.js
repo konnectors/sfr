@@ -701,10 +701,6 @@ class SfrContentScript extends ContentScript {
         const detailedFilepath = oneBill
           .querySelector('[id*="lien-telecharger-fadet"]')
           .getAttribute('href')
-        this.log(
-          'info',
-          `detailedFilePath : ${JSON.stringify(detailedFilepath)}`
-        )
         const detailed = detailedFilepath.match('detail') ? true : false
         const detailedBill = {
           ...computedBill

@@ -6923,10 +6923,6 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
         const detailedFilepath = oneBill
           .querySelector('[id*="lien-telecharger-fadet"]')
           .getAttribute('href')
-        this.log(
-          'info',
-          `detailedFilePath : ${JSON.stringify(detailedFilepath)}`
-        )
         const detailed = detailedFilepath.match('detail') ? true : false
         const detailedBill = {
           ...computedBill

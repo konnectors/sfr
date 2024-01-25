@@ -205,12 +205,33 @@ class SfrContentScript extends ContentScript {
       await this.runInWorker('getMoreBills')
     }
     await this.runInWorker('getBills', contractName)
-    await this.saveBills(this.store.allBills, {
-      context,
-      fileIdAttributes: ['subPath', 'filename'],
-      contentType: 'application/pdf',
-      qualificationLabel: 'phone_invoice'
-    })
+    const ispInvoices = []
+    const phoneInvoices = []
+    for (const bill of this.store.allBills) {
+      if (bill.subPath.match(/^(06|07)/g)) {
+        phoneInvoices.push(bill)
+      } else {
+        ispInvoices.push(bill)
+      }
+    }
+    if (ispInvoices.length) {
+      this.log('info', 'Saving isp invoices ...')
+      await this.saveBills(this.store.allBills, {
+        context,
+        fileIdAttributes: ['subPath', 'filename'],
+        contentType: 'application/pdf',
+        qualificationLabel: 'isp_invoice'
+      })
+    }
+    if (phoneInvoices.length) {
+      this.log('info', 'Saving phone invoices')
+      await this.saveBills(this.store.allBills, {
+        context,
+        fileIdAttributes: ['subPath', 'filename'],
+        contentType: 'application/pdf',
+        qualificationLabel: 'phone_invoice'
+      })
+    }
   }
 
   async authWithCredentials() {

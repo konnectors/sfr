@@ -73,6 +73,7 @@
       }
     }
   },
+  "banksTransactionRegExp": "\\bSfr\\b",
   "qualification_labels": [
     "isp_invoice"
   ],

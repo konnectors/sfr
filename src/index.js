@@ -523,8 +523,7 @@ class SfrContentScript extends ContentScript {
       .replace(/&nbsp;/g, '')
       .replace(/ /g, '')
       .replace(/\n/g, '')
-
-    const amount = parseFloat(fullAmount.replace('€', ''))
+    const amount = parseFloat(fullAmount.replace('€', '').replace(',', '.'))
     const currency = fullAmount.replace(/[0-9]*/g, '')
     const rawDate = lastBillElement
       .querySelectorAll('div')[1]
@@ -605,7 +604,6 @@ class SfrContentScript extends ContentScript {
     const rawDate = lastBillElement
       .querySelectorAll('div')[1]
       .querySelectorAll('div')[1].innerHTML
-
     const dateArray = rawDate.split('/')
     const day = dateArray[0].split('du')[1].trim()
     const month = dateArray[1].trim()
@@ -890,9 +888,10 @@ function sleep(delay) {
 }
 
 function getFileName(date, amount, currency, detailed) {
-  return `${date.replace(/\//g, '-')}_sfr_${amount}${currency}${
-    detailed ? '_detailed' : ''
-  }.pdf`
+  return `${date.replace(/\//g, '-')}_sfr_${amount}${currency.replace(
+    ',',
+    ''
+  )}${detailed ? '_detailed' : ''}.pdf`
 }
 
 function computeMonth(month) {

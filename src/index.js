@@ -157,7 +157,7 @@ class SfrContentScript extends ContentScript {
       const credentials = await this.getCredentials()
       const storeLogin = this.store.userCredentials?.login
       return {
-        sourceAccountIdentifier: credentials.login || storeLogin
+        sourceAccountIdentifier: credentials?.login || storeLogin
       }
     }
     await this.clickAndWait(`a[href="${PERSONAL_INFOS_URL}"]`, '#emailContact')
@@ -232,7 +232,7 @@ class SfrContentScript extends ContentScript {
     }
     if (ispInvoices.length) {
       this.log('info', 'Saving isp invoices ...')
-      await this.saveBills(this.store.allBills, {
+      await this.saveBills(ispInvoices, {
         context,
         fileIdAttributes: ['subPath', 'filename'],
         contentType: 'application/pdf',
@@ -241,7 +241,7 @@ class SfrContentScript extends ContentScript {
     }
     if (phoneInvoices.length) {
       this.log('info', 'Saving phone invoices')
-      await this.saveBills(this.store.allBills, {
+      await this.saveBills(phoneInvoices, {
         context,
         fileIdAttributes: ['subPath', 'filename'],
         contentType: 'application/pdf',
@@ -508,7 +508,6 @@ class SfrContentScript extends ContentScript {
       allBills = lastBill.concat(oldBills)
       this.log('debug', 'Old bills returned, sending to Pilot')
     }
-
     await this.sendToPilot({
       allBills
     })
@@ -525,7 +524,10 @@ class SfrContentScript extends ContentScript {
       'info',
       `lastBillElement : ${JSON.stringify(Boolean(lastBillElement))}`
     )
-    if (lastBillElement.innerHTML.includes('à partir du')) {
+    if (
+      lastBillElement.innerHTML.includes('à partir du') ||
+      !lastBillElement.innerHTML.includes('Payé le')
+    ) {
       this.log(
         'info',
         'This bill has no dates to fetch yet, fetching it when dates has been given'

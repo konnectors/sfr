@@ -12,8 +12,6 @@ const HOMEPAGE_URL =
 const PERSONAL_INFOS_URL =
   'https://espace-client.sfr.fr/infospersonnelles/contrat/informations/'
 const LOGOUT_SELECTOR = 'a[href*="openid-connect/logout'
-const BILLS_URL_PATH =
-  '/facture-mobile/consultation#sfrintid=EC_telecom_mob-abo_mob-factpaiement'
 class SfrContentScript extends ContentScript {
   // ////////
   // PILOT //
@@ -207,7 +205,21 @@ class SfrContentScript extends ContentScript {
   async fetchCurrentContractBills(contractName, context, isFirst) {
     this.log('info', '🤖 Fetching current contract: ' + contractName)
     if (isFirst) {
-      await this.goto(BASE_CLIENT_URL + BILLS_URL_PATH)
+      let billsUrlSelector
+      const landlineUrl =
+        'https://espace-client.sfr.fr/facture-fixe/consultation'
+      const mobileUrl =
+        'https://espace-client.sfr.fr/facture-mobile/consultation'
+      if (await this.isElementInWorker(`a[href="${landlineUrl}"]`)) {
+        this.log('info', 'landline contract selector found')
+        billsUrlSelector = `a[href="${landlineUrl}"]`
+      } else if (await this.isElementInWorker(`a[href="${mobileUrl}"]`)) {
+        this.log('info', 'mobile contract selector found')
+        billsUrlSelector = `a[href="${mobileUrl}"]`
+      } else {
+        this.log('warn', 'No link to bills page found')
+      }
+      await this.runInWorker('click', billsUrlSelector)
     }
     await Promise.race([
       this.waitForElementInWorker('#blocAjax'),
@@ -696,7 +708,6 @@ class SfrContentScript extends ContentScript {
         .querySelector('[id*="lien-duplicata-pdf-"]')
         .getAttribute('href')
       const fileurl = `${BASE_CLIENT_URL}${filepath}`
-
       let computedBill = {
         amount,
         currency: currency === '€' ? 'EUR' : currency,

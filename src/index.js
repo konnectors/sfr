@@ -80,7 +80,7 @@ class SfrContentScript extends ContentScript {
     await sleep(1) // let some time to start the load of the next page
     await Promise.race([
       this.waitForElementInWorker('#username'),
-      this.waitForElementInWorker('label[title=Client]'),
+      this.waitForElementInWorker('label[title="Espace Client"]'),
       this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
     ])
 
@@ -143,22 +143,40 @@ class SfrContentScript extends ContentScript {
 
   async getUserDataFromWebsite() {
     this.log('info', '🤖 getUserDataFromWebsite starts')
+    const credentials = await this.getCredentials()
+    const storeLogin = this.store.userCredentials?.login
     await this.waitForElementInWorker(`a[href="${PERSONAL_INFOS_URL}"]`)
     const isVisible = await this.runInWorker(
-      'checkPersonnalInfosLinkVisibility'
+      'checkPersonnalInfosLinkAvailability'
     )
     if (!isVisible) {
       this.log(
         'warn',
         'Access to personnal infos page is not allowed for this contract, skipping identity scraping'
       )
-      const credentials = await this.getCredentials()
-      const storeLogin = this.store.userCredentials?.login
       return {
         sourceAccountIdentifier: credentials?.login || storeLogin
       }
     }
-    await this.clickAndWait(`a[href="${PERSONAL_INFOS_URL}"]`, '#emailContact')
+    this.log('info', 'personnalInfoLink visible')
+    await this.runInWorker('click', `a[href="${PERSONAL_INFOS_URL}"]`)
+    await Promise.race([
+      this.waitForElementInWorker('#emailContact'),
+      this.runInWorkerUntilTrue({ method: 'checkPersonnalInfosPageError' })
+    ])
+    if (this.store.infoPageError) {
+      let message =
+        this.store.infoPageError === 'error'
+          ? 'website is showing an error'
+          : "user's offer is not authorized to access this page"
+      this.log(
+        'warn',
+        `Can not access personnal info page, ${message}. Skipping identity scraping`
+      )
+      return {
+        sourceAccountIdentifier: credentials?.login || storeLogin
+      }
+    }
     const sourceAccountId = await this.runInWorker('getUserMail')
     await this.runInWorker('getUserIdentity')
     if (sourceAccountId === 'UNKNOWN_ERROR') {
@@ -891,13 +909,52 @@ class SfrContentScript extends ContentScript {
     return false
   }
 
-  async checkPersonnalInfosLinkVisibility() {
-    this.log('info', '📍️ checkPersonnalInfosLinkVisibility starts')
-    const elementComputedStyles = window.getComputedStyle(
-      document.querySelector(`a[href="${PERSONAL_INFOS_URL}"]`)
-    )
-    const isVisible = elementComputedStyles?.display !== 'none'
+  async checkPersonnalInfosLinkAvailability() {
+    this.log('info', '📍️ checkPersonnalInfosLinkAvailability starts')
+    const element = document.querySelector(`a[href="${PERSONAL_INFOS_URL}"]`)
+
+    const isVisible = element ? true : false
     return isVisible
+  }
+
+  async checkPersonnalInfosPageError() {
+    this.log('info', '📍️ checkPersonnalInfosPageError starts')
+    let hasError = false
+    await waitFor(
+      async () => {
+        const errorH1 = document.querySelector('h1')
+        const nonAuthorizedH2 = document.querySelector('h2')
+        if (errorH1?.textContent.includes('erreur')) {
+          this.log(
+            'info',
+            `Error H1 found on this page : ${errorH1.textContent}`
+          )
+          hasError = 'error'
+          return true
+        }
+        if (
+          nonAuthorizedH2?.textContent.includes(
+            'Votre offre actuelle ne vous permet pas'
+          )
+        ) {
+          this.log(
+            'infos',
+            `nonAuthorized H2 found on this page : ${nonAuthorizedH2.textContent}`
+          )
+          hasError = 'unauthorized'
+          return true
+        }
+        return false
+      },
+      {
+        interval: 1000,
+        timeout: 30 * 1000
+      }
+    )
+    if (hasError) {
+      await this.sendToPilot({ infoPageError: hasError })
+    }
+    return true
   }
 }
 
@@ -913,7 +970,8 @@ connector
       'getContracts',
       'waitForRedUrl',
       'isRedUrl',
-      'checkPersonnalInfosLinkVisibility'
+      'checkPersonnalInfosLinkAvailability',
+      'checkPersonnalInfosPageError'
     ]
   })
   .catch(err => {

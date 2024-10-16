@@ -16,6 +16,40 @@ class SfrContentScript extends ContentScript {
   // ////////
   // PILOT //
   // ////////
+
+  async onWorkerReady() {
+    await this.waitForElementNoReload('#loginForm')
+    this.watchLoginForm.bind(this)()
+  }
+
+  onWorkerEvent({ event, payload }) {
+    if (event === 'loginSubmit') {
+      this.log('info', `User's credential intercepted`)
+      const { login, password } = payload
+      this.store.userCredentials = { login, password }
+    }
+  }
+
+  watchLoginForm() {
+    this.log('info', '📍️ watchLoginForm starts')
+    const loginField = document.querySelector('#username')
+    const passwordField = document.querySelector('#password')
+    if (loginField && passwordField) {
+      this.log('info', 'Found credentials fields, adding form listener')
+      const loginForm = document.querySelector('#loginForm')
+      loginForm.addEventListener('submit', () => {
+        const login = loginField.value
+        const password = passwordField.value
+        const event = 'loginSubmit'
+        const payload = { login, password }
+        this.bridge.emit('workerEvent', {
+          event,
+          payload
+        })
+      })
+    }
+  }
+
   async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
     // we always force logout to avoid conflicts with red accounts
@@ -281,27 +315,6 @@ class SfrContentScript extends ContentScript {
     }
   }
 
-  async authWithCredentials() {
-    this.log('info', 'authWithCredentials starts')
-    await this.goto(CLIENT_SPACE_URL)
-    await this.waitForElementInWorker(`${LOGOUT_SELECTOR}`)
-    const reloginPage = await this.runInWorker('getReloginPage')
-    if (reloginPage) {
-      this.log('debug', 'Login expired, new authentication is needed')
-      await this.waitForUserAuthentication()
-      return true
-    }
-    return true
-  }
-
-  async authWithoutCredentials() {
-    this.log('info', 'authWithoutCredentials starts')
-    await this.goto(CLIENT_SPACE_URL)
-    await this.waitForElementInWorker('#username')
-    await this.waitForUserAuthentication()
-    return true
-  }
-
   // ////////
   // WORKER//
   // ////////
@@ -331,18 +344,6 @@ class SfrContentScript extends ContentScript {
   }
 
   async checkAuthenticated() {
-    const loginField = document.querySelector('#username')
-    const passwordField = document.querySelector('#password')
-    if (loginField && passwordField) {
-      const userCredentials = await this.findAndSendCredentials.bind(this)(
-        loginField,
-        passwordField
-      )
-      this.log('debug', 'Sendin userCredentials to Pilot')
-      this.sendToPilot({
-        userCredentials
-      })
-    }
     if (
       document.location.href === HOMEPAGE_URL &&
       document.querySelector(`${LOGOUT_SELECTOR}`)
@@ -358,17 +359,6 @@ class SfrContentScript extends ContentScript {
       return true
     }
     return false
-  }
-
-  async findAndSendCredentials(login, password) {
-    this.log('debug', 'findAndSendCredentials starts')
-    let userLogin = login.value
-    let userPassword = password.value
-    const userCredentials = {
-      login: userLogin,
-      password: userPassword
-    }
-    return userCredentials
   }
 
   async getUserMail() {

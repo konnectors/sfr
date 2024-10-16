@@ -80,7 +80,8 @@ class SfrContentScript extends ContentScript {
     await sleep(1) // let some time to start the load of the next page
     await Promise.race([
       this.waitForElementInWorker('#username'),
-      this.waitForElementInWorker('label[title="Espace Client"]'),
+      // Selector for contract details info (name and last bill) on landing page
+      this.waitForElementInWorker('[class="bloc droit"]'),
       this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
     ])
 

@@ -454,7 +454,7 @@ class SfrContentScript extends ContentScript {
     )
       .filter(el => !el.getAttribute('class'))
       .map(el => {
-        const text = el.innerHTML.trim()
+        const text = el.textContent.trim()
         let type
         if (text.startsWith('06') || text.startsWith('07')) {
           type = 'mobile'

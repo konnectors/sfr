@@ -6201,9 +6201,60 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   // ////////
   // PILOT //
   // ////////
+
+  async onWorkerReady() {
+    await this.waitForElementNoReload('#loginForm')
+    this.watchLoginForm.bind(this)()
+  }
+
+  onWorkerEvent({ event, payload }) {
+    if (event === 'loginSubmit') {
+      this.log('info', `User's credential intercepted`)
+      const { login, password } = payload
+      this.store.userCredentials = { login, password }
+    }
+  }
+
+  watchLoginForm() {
+    this.log('info', '📍️ watchLoginForm starts')
+    const loginField = document.querySelector('#username')
+    const passwordField = document.querySelector('#password')
+    if (loginField && passwordField) {
+      this.log('info', 'Found credentials fields, adding form listener')
+      const loginForm = document.querySelector('#loginForm')
+      loginForm.addEventListener('submit', () => {
+        const login = loginField.value
+        const password = passwordField.value
+        const event = 'loginSubmit'
+        const payload = { login, password }
+        this.bridge.emit('workerEvent', {
+          event,
+          payload
+        })
+      })
+    }
+  }
+
   async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
-    // we always force logout to avoid conflicts with red accounts
+    await this.goto(CLIENT_SPACE_URL)
+    await Promise.race([
+      this.waitForElementInWorker('#username'),
+      // Selector for contract details info (name and last bill) on landing page
+      this.waitForElementInWorker('[class="bloc droit"]'),
+      this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
+    ])
+    const auth = await this.runInWorker('checkAuthenticated')
+    const credentials = await this.getCredentials()
+    if (auth && credentials) {
+      const { sfrMLS } = await this.runInWorker(
+        'checkPersonnalInfosLinkAvailability'
+      )
+      if (sfrMLS === credentials.sfrMLS) {
+        this.log('info', 'Expected user already logged, continue')
+        return true
+      }
+    }
     await (0,p_retry__WEBPACK_IMPORTED_MODULE_3__["default"])(this.ensureNotAuthenticated.bind(this), {
       retries: 3,
       onFailedAttempt: error => {
@@ -6265,7 +6316,8 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     await sleep(1) // let some time to start the load of the next page
     await Promise.race([
       this.waitForElementInWorker('#username'),
-      this.waitForElementInWorker('label[title="Espace Client"]'),
+      // Selector for contract details info (name and last bill) on landing page
+      this.waitForElementInWorker('[class="bloc droit"]'),
       this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
     ])
 
@@ -6331,10 +6383,11 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     const credentials = await this.getCredentials()
     const storeLogin = this.store.userCredentials?.login
     await this.waitForElementInWorker(`a[href="${PERSONAL_INFOS_URL}"]`)
-    const isVisible = await this.runInWorker(
+    const { element, sfrMLS } = await this.runInWorker(
       'checkPersonnalInfosLinkAvailability'
     )
-    if (!isVisible) {
+    this.store.sfrMLS = sfrMLS
+    if (!element) {
       this.log(
         'warn',
         'Access to personnal infos page is not allowed for this contract, skipping identity scraping'
@@ -6376,6 +6429,8 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   async fetch(context) {
     this.log('info', '🤖 fetch starts')
     if (this.store.userCredentials) {
+      // Usefull to avoid logout if not needed
+      this.store.userCredentials.sfrMLS = this.store.sfrMLS
       await this.saveCredentials(this.store.userCredentials)
     }
     if (this.store.userIdentity) {
@@ -6465,27 +6520,6 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     }
   }
 
-  async authWithCredentials() {
-    this.log('info', 'authWithCredentials starts')
-    await this.goto(CLIENT_SPACE_URL)
-    await this.waitForElementInWorker(`${LOGOUT_SELECTOR}`)
-    const reloginPage = await this.runInWorker('getReloginPage')
-    if (reloginPage) {
-      this.log('debug', 'Login expired, new authentication is needed')
-      await this.waitForUserAuthentication()
-      return true
-    }
-    return true
-  }
-
-  async authWithoutCredentials() {
-    this.log('info', 'authWithoutCredentials starts')
-    await this.goto(CLIENT_SPACE_URL)
-    await this.waitForElementInWorker('#username')
-    await this.waitForUserAuthentication()
-    return true
-  }
-
   // ////////
   // WORKER//
   // ////////
@@ -6515,18 +6549,6 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   }
 
   async checkAuthenticated() {
-    const loginField = document.querySelector('#username')
-    const passwordField = document.querySelector('#password')
-    if (loginField && passwordField) {
-      const userCredentials = await this.findAndSendCredentials.bind(this)(
-        loginField,
-        passwordField
-      )
-      this.log('debug', 'Sendin userCredentials to Pilot')
-      this.sendToPilot({
-        userCredentials
-      })
-    }
     if (
       document.location.href === HOMEPAGE_URL &&
       document.querySelector(`${LOGOUT_SELECTOR}`)
@@ -6542,17 +6564,6 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
       return true
     }
     return false
-  }
-
-  async findAndSendCredentials(login, password) {
-    this.log('debug', 'findAndSendCredentials starts')
-    let userLogin = login.value
-    let userPassword = password.value
-    const userCredentials = {
-      login: userLogin,
-      password: userPassword
-    }
-    return userCredentials
   }
 
   async getUserMail() {
@@ -6639,7 +6650,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     )
       .filter(el => !el.getAttribute('class'))
       .map(el => {
-        const text = el.innerHTML.trim()
+        const text = el.textContent.trim()
         let type
         if (text.startsWith('06') || text.startsWith('07')) {
           type = 'mobile'
@@ -7096,10 +7107,21 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
 
   async checkPersonnalInfosLinkAvailability() {
     this.log('info', '📍️ checkPersonnalInfosLinkAvailability starts')
-    const element = document.querySelector(`a[href="${PERSONAL_INFOS_URL}"]`)
-
-    const isVisible = element ? true : false
-    return isVisible
+    let sfrMLS
+    const foundSfrMLS = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('MLS='))
+    if (foundSfrMLS) {
+      // Sometimes value is urlEncoded, sometimes not, so we do this to ensure we're getting the right value and
+      // MLS can contain "=" char in the value, doing this as the effect of a split function without risking to split de value as well
+      sfrMLS = decodeURIComponent(
+        foundSfrMLS.substring(foundSfrMLS.indexOf('=') + 1)
+      )
+    }
+    const element = Boolean(
+      document.querySelector(`a[href="${PERSONAL_INFOS_URL}"]`)
+    )
+    return { element, sfrMLS }
   }
 
   async checkPersonnalInfosPageError() {

@@ -52,7 +52,24 @@ class SfrContentScript extends ContentScript {
 
   async ensureAuthenticated() {
     this.log('info', '🤖 ensureAuthenticated starts')
-    // we always force logout to avoid conflicts with red accounts
+    await this.goto(CLIENT_SPACE_URL)
+    await Promise.race([
+      this.waitForElementInWorker('#username'),
+      // Selector for contract details info (name and last bill) on landing page
+      this.waitForElementInWorker('[class="bloc droit"]'),
+      this.runInWorkerUntilTrue({ method: 'waitForRedUrl' })
+    ])
+    const auth = await this.runInWorker('checkAuthenticated')
+    const credentials = await this.getCredentials()
+    if (auth && credentials) {
+      const { sfrMLS } = await this.runInWorker(
+        'checkPersonnalInfosLinkAvailability'
+      )
+      if (sfrMLS === credentials.sfrMLS) {
+        this.log('info', 'Expected user already logged, continue')
+        return true
+      }
+    }
     await pRetry(this.ensureNotAuthenticated.bind(this), {
       retries: 3,
       onFailedAttempt: error => {
@@ -181,10 +198,11 @@ class SfrContentScript extends ContentScript {
     const credentials = await this.getCredentials()
     const storeLogin = this.store.userCredentials?.login
     await this.waitForElementInWorker(`a[href="${PERSONAL_INFOS_URL}"]`)
-    const isVisible = await this.runInWorker(
+    const { element, sfrMLS } = await this.runInWorker(
       'checkPersonnalInfosLinkAvailability'
     )
-    if (!isVisible) {
+    this.store.sfrMLS = sfrMLS
+    if (!element) {
       this.log(
         'warn',
         'Access to personnal infos page is not allowed for this contract, skipping identity scraping'
@@ -226,6 +244,8 @@ class SfrContentScript extends ContentScript {
   async fetch(context) {
     this.log('info', '🤖 fetch starts')
     if (this.store.userCredentials) {
+      // Usefull to avoid logout if not needed
+      this.store.userCredentials.sfrMLS = this.store.sfrMLS
       await this.saveCredentials(this.store.userCredentials)
     }
     if (this.store.userIdentity) {
@@ -902,10 +922,21 @@ class SfrContentScript extends ContentScript {
 
   async checkPersonnalInfosLinkAvailability() {
     this.log('info', '📍️ checkPersonnalInfosLinkAvailability starts')
-    const element = document.querySelector(`a[href="${PERSONAL_INFOS_URL}"]`)
-
-    const isVisible = element ? true : false
-    return isVisible
+    let sfrMLS
+    const foundSfrMLS = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('MLS='))
+    if (foundSfrMLS) {
+      // Sometimes value is urlEncoded, sometimes not, so we do this to ensure we're getting the right value and
+      // MLS can contain "=" char in the value, doing this as the effect of a split function without risking to split de value as well
+      sfrMLS = decodeURIComponent(
+        foundSfrMLS.substring(foundSfrMLS.indexOf('=') + 1)
+      )
+    }
+    const element = Boolean(
+      document.querySelector(`a[href="${PERSONAL_INFOS_URL}"]`)
+    )
+    return { element, sfrMLS }
   }
 
   async checkPersonnalInfosPageError() {

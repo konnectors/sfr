@@ -296,8 +296,24 @@ class SfrContentScript extends ContentScript {
     }
     await Promise.race([
       this.waitForElementInWorker('#blocAjax'),
-      this.waitForElementInWorker('#historique')
+      this.waitForElementInWorker('#historique'),
+      this.waitForElementInWorker('h1', {
+          includesText: 'information facture indisponible'
+        })
     ])
+    this.log('info', 'Checking for bills availability')
+      if (
+        await this.isElementInWorker('h1', {
+          includesText: 'information facture indisponible'
+        })
+      ) {
+        this.log(
+          'warn',
+          'Bills information are not available, ending execution'
+        )
+        throw new Error('VENDOR_DOWN')
+      }
+    this.log('info', 'Bills available, fetching them ...')
     const altButton = await this.isElementInWorker('#plusFac')
     const normalButton = await this.isElementInWorker(
       'button[onclick="plusFacture(); return false;"]'

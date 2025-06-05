@@ -473,15 +473,15 @@ class SfrContentScript extends ContentScript {
   async getContracts() {
     this.log('info', '📍️ getContracts starts')
     const contracts = Array.from(
-      document
-        .querySelector(
-          `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`
-        )
-        .parentNode.parentNode.querySelectorAll('li')
+      document.querySelectorAll(`body > nav > ul > li`)
     )
-      .filter(el => !el.getAttribute('class'))
+      .filter(el =>
+        el.querySelector('a').getAttribute('href').startsWith('?e=')
+      )
       .map(el => {
-        const text = el.textContent.trim()
+        const lineNumber = el.querySelector('h4').textContent.trim()
+        const contractStatus = el.querySelector('p').textContent.trim()
+        const text = `${lineNumber} ${contractStatus}`
         let type
         if (text.startsWith('06') || text.startsWith('07')) {
           type = 'mobile'
@@ -489,7 +489,10 @@ class SfrContentScript extends ContentScript {
           type = 'fixe'
         }
         return {
-          id: el.getAttribute('id') || 'current',
+          // No more "id" attributes available, got to find it in the href
+          id:
+            el.querySelector('a').getAttribute('href').split('?e=')[1] ||
+            'current',
           text,
           type
         }

@@ -6270,7 +6270,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   async navigateToNextContract(contract) {
     this.log(
       'info',
-      `📍️ navigateToNextContract starts for ${JSON.stringify(contract.text)}`
+      `📍️ navigateToNextContract starts for ${contract.text.slice(0, 5)}`
     )
     // Removing elements here is to ensure we're not finding the awaited elements
     // before the next contract is loaded
@@ -6283,7 +6283,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
         document.querySelector('div[class="sr-inline sr-xs-block "]').remove()
       })
     }
-    await this.runInWorker('click', `li[id='${contract.id}']`)
+    await this.runInWorker('click', `button[id='${contract.id}']`)
     await Promise.race([
       this.waitForElementInWorker('div[class="sr-inline sr-xs-block"]'),
       this.waitForElementInWorker('div[class="sr-inline sr-xs-block "]'),
@@ -6448,41 +6448,62 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
     )
     for (const contract of contracts) {
       const contractName = contract.text
-      if (contract.id !== 'current') {
+      if (!isFirstContract) {
         await this.navigateToNextContract(contract)
+      } else {
+        await this.runInWorker(
+          'click',
+          `a[href="https://espace-client.sfr.fr/facture-${contract.type}/infoconso"]`
+        )
+        await this.waitForElementInWorker('#lastFacture, #blocAjax')
       }
-      await this.fetchCurrentContractBills(
-        contractName,
-        context,
-        isFirstContract
-      )
+      if (await this.isElementInWorker('#lastFacture')) {
+        this.log('info', 'lastFacture selector found')
+        await Promise.all([
+          this.waitForElementInWorker('#tab'),
+          this.waitForElementInWorker('div[id*="part"]')
+        ])
+      } else if (await this.isElementInWorker('#blocAjax')) {
+        this.log('info', 'blocAjax selector found')
+        await Promise.all([
+          // Whitespace at the end of the first selector is not an error, there is a typo on the website on some contracts, that's why we're waiting for both
+          // Selector for last bill
+          this.waitForElementInWorker(
+            'div[class="sr-inline sr-xs-block "], div[class="sr-inline sr-xs-block"]'
+          ),
+          // Selector for first old bill
+          this.waitForElementInWorker(
+            '.sr-multi-payment > .sr-container-content-line'
+          )
+        ])
+      }
+      await this.fetchCurrentContractBills(contractName, context)
       isFirstContract = false
     }
   }
 
-  async fetchCurrentContractBills(contractName, context, isFirst) {
-    this.log('info', '🤖 Fetching current contract: ' + contractName)
-    if (isFirst) {
-      let billsUrlSelector
-      const landlineUrl =
-        'https://espace-client.sfr.fr/facture-fixe/consultation'
-      const mobileUrl =
-        'https://espace-client.sfr.fr/facture-mobile/consultation'
-      if (await this.isElementInWorker(`a[href="${landlineUrl}"]`)) {
-        this.log('info', 'landline contract selector found')
-        billsUrlSelector = `a[href="${landlineUrl}"]`
-      } else if (await this.isElementInWorker(`a[href="${mobileUrl}"]`)) {
-        this.log('info', 'mobile contract selector found')
-        billsUrlSelector = `a[href="${mobileUrl}"]`
-      } else {
-        this.log('warn', 'No link to bills page found')
-      }
-      await this.runInWorker('click', billsUrlSelector)
-    }
+  async fetchCurrentContractBills(contractName, context) {
+    this.log(
+      'info',
+      `🤖 Fetching current contract: ${contractName.slice(0, 5)}...`
+    )
     await Promise.race([
       this.waitForElementInWorker('#blocAjax'),
-      this.waitForElementInWorker('#historique')
+      this.waitForElementInWorker('#historique'),
+      this.waitForElementInWorker('h1', {
+        includesText: 'information facture indisponible'
+      })
     ])
+    this.log('info', 'Checking for bills availability')
+    if (
+      await this.isElementInWorker('h1', {
+        includesText: 'information facture indisponible'
+      })
+    ) {
+      this.log('warn', 'Bills information are not available, ending execution')
+      throw new Error('VENDOR_DOWN')
+    }
+    this.log('info', 'Bills available, fetching them ...')
     const altButton = await this.isElementInWorker('#plusFac')
     const normalButton = await this.isElementInWorker(
       'button[onclick="plusFacture(); return false;"]'
@@ -6537,7 +6558,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   }
 
   async waitForRedUrl() {
-    this.log('info', '📍️ waitForRedUrl starts')
+    // this.log('info', '📍️ waitForRedUrl starts')
     await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_2__["default"])(this.isRedUrl, {
       interval: 100,
       timeout: {
@@ -6642,15 +6663,15 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   async getContracts() {
     this.log('info', '📍️ getContracts starts')
     const contracts = Array.from(
-      document
-        .querySelector(
-          `a[href='https://espace-client.sfr.fr/gestion-ligne/lignes/ajouter']`
-        )
-        .parentNode.parentNode.querySelectorAll('li')
+      document.querySelectorAll(`body > nav > ul > li`)
     )
-      .filter(el => !el.getAttribute('class'))
+      .filter(el =>
+        el.querySelector('a').getAttribute('href').startsWith('?e=')
+      )
       .map(el => {
-        const text = el.textContent.trim()
+        const lineNumber = el.querySelector('h4').textContent.trim()
+        const contractStatus = el.querySelector('p').textContent.trim()
+        const text = `${lineNumber} ${contractStatus}`
         let type
         if (text.startsWith('06') || text.startsWith('07')) {
           type = 'mobile'
@@ -6658,29 +6679,15 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
           type = 'fixe'
         }
         return {
-          id: el.getAttribute('id') || 'current',
+          // No more "id" attributes available, got to find it in the href
+          id:
+            el.querySelector('a').getAttribute('href').split('?e=')[1] ||
+            'current',
           text,
           type
         }
       })
     return contracts
-  }
-
-  async getCurrentContract() {
-    this.log('info', '📍️ getCurrentContract starts')
-    try {
-      const contracts = await this.getContracts()
-      const currentContract = contracts.find(
-        contract => contract.id === 'current'
-      )
-      return currentContract
-    } catch (err) {
-      this.log(
-        'debug',
-        `Error while trying to get current contract ${err.message}`
-      )
-      return false
-    }
   }
 
   async getMoreBills() {
@@ -7125,7 +7132,7 @@ class SfrContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPORTED_M
   }
 
   async checkPersonnalInfosPageError() {
-    this.log('info', '📍️ checkPersonnalInfosPageError starts')
+    // this.log('info', '📍️ checkPersonnalInfosPageError starts')
     let hasError = false
     await (0,p_wait_for__WEBPACK_IMPORTED_MODULE_2__["default"])(
       async () => {
